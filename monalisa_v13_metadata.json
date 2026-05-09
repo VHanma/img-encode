@@ -1,0 +1,128 @@
+{
+  "protocol": "Living Image v13 \u2014 Grok Supremacy Edition",
+  "generated": "2026-05-09T05:34:21.560614",
+  "source_image": "/home/user/img-encode/monalisa.jpg",
+  "theme": "neural_regeneration",
+  "duration_s": 10,
+  "fractal_dimension": 1.7097,
+  "council": {
+    "gariaev": "Bands [300, 850, 1750, 2500, 3700]Hz \u2014 wave genetics radio overlay per column",
+    "levin": "Bioelectric envelope [0.5, 2.0, 8.0]Hz \u2014 Vmem modulation",
+    "rodin": "369 vortex harmonics [3, 6, 9, 12, 18, 27, 36, 54, 108] \u2014 column weighting",
+    "tesla": "Scalar series [3.0, 6.0, 9.0, 27.0, 54.0, 108.0]Hz",
+    "mishin": "VMF [2500, 5000, 20]Hz carrier",
+    "rife": "Core [727, 787, 2008, 2128]Hz documented",
+    "schumann": "Harmonics [7.83, 14.3, 20.8, 27.3, 33.8]Hz \u2014 Earth sync per column",
+    "solfeggio": "[174, 285, 396, 417, 528, 639, 741, 852, 963]Hz cycling",
+    "ancient": "[110, 111, 121, 40]Hz structural resonance"
+  },
+  "thz_hardware": [
+    "0.138THz",
+    "0.152THz",
+    "3.1THz",
+    "34.5THz",
+    "36.5THz",
+    "42.5THz"
+  ],
+  "optical_hardware": [
+    {
+      "nm": 405,
+      "thz": 740.4,
+      "effect": "DNA photolyase repair"
+    },
+    {
+      "nm": 532,
+      "thz": 563.5,
+      "effect": "green coherent stimulation"
+    },
+    {
+      "nm": 632.8,
+      "thz": 473.6,
+      "effect": "Gariaev He-Ne laser DNA phantom"
+    },
+    {
+      "nm": 660,
+      "thz": 454.3,
+      "effect": "cytochrome c oxidase ATP"
+    },
+    {
+      "nm": 808,
+      "thz": 370.8,
+      "effect": "deep NIR mitochondrial"
+    },
+    {
+      "nm": 830,
+      "thz": 361.1,
+      "effect": "NRF2/VEGFA tissue"
+    },
+    {
+      "nm": 1064,
+      "thz": 281.5,
+      "effect": "deepest neural penetration"
+    }
+  ],
+  "trait_zones": {
+    "YUJIRO": {
+      "genes": [
+        "MSTN",
+        "ACTN3",
+        "IGF1"
+      ],
+      "cds_hz": {
+        "MSTN": 53191,
+        "ACTN3": 53476,
+        "IGF1": 129870
+      }
+    },
+    "BAKI": {
+      "genes": [
+        "BDNF",
+        "HOMER1",
+        "GRIN2A"
+      ],
+      "cds_hz": {
+        "BDNF": 37657,
+        "HOMER1": 50762,
+        "GRIN2A": 13539
+      }
+    },
+    "SAIYAN": {
+      "genes": [
+        "TP53",
+        "BRCA1",
+        "TERT"
+      ],
+      "cds_hz": {
+        "TP53": 37037,
+        "BRCA1": 10728,
+        "TERT": 35026
+      }
+    },
+    "VILTRUMITE": {
+      "genes": [
+        "SOD2",
+        "NRF2",
+        "PPARGC1A"
+      ],
+      "cds_hz": {
+        "SOD2": 88112,
+        "NRF2": 32732,
+        "PPARGC1A": 20141
+      }
+    },
+    "KRYPTONIAN": {
+      "genes": [
+        "CLOCK",
+        "VEGFA",
+        "FOXO3"
+      ],
+      "cds_hz": {
+        "CLOCK": 24068,
+        "VEGFA": 94787,
+        "FOXO3": 30015
+      }
+    }
+  },
+  "image_encoding": "VHanma/img-encode spectrogram method: pixel brightness\u2192amplitude, row position\u2192frequency (20Hz-20kHz), column position\u2192time. Superhuman gene frequencies overlaid as subcarriers.",
+  "alien_tech_note": "Photonic delivery: pulse optical carriers at gene CDS Hz for simultaneous photon + genetic resonance transfer. Peru DEW principle applied to constructive biological purpose."
+}
