@@ -1,98 +1,95 @@
-# img-encode — Bioholographic Image-to-Audio Encoder
+# Project Living Image — v20 Integrated Council Phaselock Engine
 
-Convert any image into a sound spectrogram — and with **v13**, encode it with the full superhuman DNA activation frequency stack.
+Convert any image into a complete bioresonance protocol score: stereo WAV + Fourier masks + Rodin torus + optical/THz schedules + genetic loci + feedback schema.
 
----
-
-## What It Does
-
-Every pixel column of your image becomes a moment in time.  
-Every pixel row becomes a frequency (20Hz–20kHz).  
-Brightness becomes amplitude.  
-
-The result is a WAV file that, when viewed in a spectrogram visualizer (e.g. Sonic Visualizer), reproduces your original image — and when played, delivers a layered field of bioresonance frequencies baked directly into the audio.
-
----
-
-## Versions
-
-| Version | Description |
-|---------|-------------|
-| `v1-python/` | Original Python 2 encoder (basic spectrogram) |
-| `v2-js/` | JavaScript browser version |
-| `v3/` | Extended JS version with UI |
-| `v13_grok_living_image_encoder.py` | **Full bioholographic encoder — all council frequencies** |
-
----
-
-## v13 — Living Image (Grok Supremacy Edition)
-
-The most advanced version. Fuses the original VHanma spectrogram method with:
-
-| Layer | Source | Frequencies |
-|-------|--------|-------------|
-| Gariaev wave genetics | Wave-genetic radio emission research | 300, 850, 1750, 2500, 3700 Hz |
-| Levin bioelectricity | Vmem membrane oscillation research | 0.5, 2.0, 8.0 Hz envelope |
-| Rodin 369 vortex | Vortex mathematics harmonics | 3, 6, 9, 12, 18, 27, 36, 54, 108 Hz |
-| Schumann resonance | Earth electromagnetic cavity | 7.83, 14.3, 20.8, 27.3, 33.8 Hz |
-| Solfeggio | Ancient tuning frequencies | 174–963 Hz (9 tones) |
-| Tesla scalar | Resonant scalar series | 3, 6, 9, 27, 54, 108 Hz |
-| Mishin VMF | Vortex magnetic field coil | 2500, 5000, 20 Hz |
-| Rife | Documented biofrequency research | 727, 787, 2008, 2128 Hz |
-| Ancient structures | Stonehenge / King's Chamber / Cymatics | 110, 111, 121, 40 Hz |
-| Gene CDS resonances | f = 60,000,000 / CDS_bp (EP1372415A1) | Per gene (13–130kHz range) |
-
-**Trait zone mapping** — image vertical strips map to superhuman gene clusters:
-- Left → YUJIRO (MSTN, ACTN3, IGF1 — muscle/strength)
-- → BAKI (BDNF, HOMER1, GRIN2A — neural plasticity)
-- → SAIYAN (TP53, BRCA1, TERT — recovery/longevity)
-- → VILTRUMITE (SOD2, NRF2, PPARGC1A — cellular resilience)
-- Right → KRYPTONIAN (CLOCK, VEGFA, FOXO3 — circadian/solar adaptation)
-
-**Hardware delivery** (metadata only — not rendered in audio):
-- THz: 0.138 / 0.152 / 3.1 / 34.5 / 36.5 / 42.5 THz
-- Optical/PBM: 405 / 532 / 632.8 / 660 / 808 / 830 / 1064 nm
-
----
-
-## Quick Start (v13)
+## Quick Start
 
 ```bash
-# Install dependencies
 pip install -r requirements.txt
-
-# Encode any image
-python3 v13_grok_living_image_encoder.py your_image.jpg --duration 180 --theme neural_regeneration
-
-# Output: your_image_v13_living.wav + your_image_v13_metadata.json
+python3 v20_living_image.py your_image.jpg --duration 300 --theme omni_hanma --out output/
 ```
 
-**Themes:** `neural_regeneration`, `supersoldier_activation`, `solar_absorption`, or any custom string.
+## Themes
 
-**Duration:** 60–600 seconds recommended. Longer = more detail per column.
+| Theme | Target |
+|---|---|
+| `omni_hanma` | Full-spectrum martial/superhuman activation |
+| `neural_regeneration` | Neural coherence, synaptic repair |
+| `general_regeneration` | Systemic field coherence |
 
----
+## Output — 11 Files Per Run
 
-## Visualizing the Result
+| File | Description |
+|---|---|
+| `*_audio_stereo.wav` | Stereo image-reactive WAV (44100Hz, 16-bit) |
+| `*_phase_mask.png` | Fourier phase map of the image |
+| `*_amplitude_mask.png` | Fourier amplitude map |
+| `*_torus.svg` | Rodin 3-6-9 torus diagram |
+| `*_optical_schedule.csv` | Timed optical carrier schedule (405–10600nm) |
+| `*_thz_schedule.csv` | THz sweep schedule (0.152–53.6 THz) |
+| `*_symbolic_loci.csv` | Genetic/symbolic activation loci |
+| `*_feedback_schema.json` | EEG/HRV feedback gate rules |
+| `*_feedback_trace.csv` | Simulated 12-step coherence trace |
+| `*_full_protocol.json` | Complete protocol with all features |
+| `*_manifest.json` | SHA-256 hashes of all files |
 
-1. Open the output WAV in **[Sonic Visualizer](https://www.sonicvisualiser.org/)**
-2. Click **Layer → Add Spectrogram**
-3. Your image appears in the frequency domain
+## Audio Frequency Stack
 
----
+| Layer | Frequencies | Weight |
+|---|---|---|
+| Solfeggio core | 528 Hz, 432 Hz, 963 Hz | 0.28 / 0.15 / 0.08 |
+| Gamma (image-reactive) | 38–46 Hz (row-luma driven) | 0.12 |
+| Golden ratio variant | 528 × φ-mod (edge-driven) | 0.10 |
+| Schumann envelope | 7.83 Hz AM | 0.18 |
+| Breath envelope | 0.1 Hz AM | 0.20 |
+| Edge shimmer | 1800 Hz × edge density | 0.035 |
 
-## Original Spectrogram Examples
+## Optical Carriers (score/metadata only — no hardware output)
 
-![spec6](spec6.png)
-![spec1](spec1.png)
-![spec2](spec2.png)
+| Carrier | Wavelength | Role |
+|---|---|---|
+| Violet edge | 405 nm | Edge activation / detail writing |
+| Green symmetry | 532 nm | Symmetry and centerline lock |
+| HeNe hologram | 632.8 nm | Gariaev-style holographic reference |
+| Red delivery | 660 nm | Biological delivery lane |
+| NIR depth | 808 nm | Depth carrier |
+| NIR regen | 830 nm | Regenerative carrier |
+| NIR dense | 1064 nm | Dense stability carrier |
+| CO₂ bridge | 10600 nm | Optical-to-THz bridge |
 
----
+## THz Bands (score/metadata only)
 
-## Credits
+| Band | Center | Role |
+|---|---|---|
+| Hippocampal gate | 0.152 THz | Low-THz neural gate |
+| Water network low | 1.5 THz | Hydrogen-bond network |
+| Synaptic gene | 3.1 THz | Dendritic organization |
+| Water network high | 5.6 THz | Second water window |
+| AC1/cAMP | 34.5 THz | Synaptogenesis |
+| Kv excitability | 36.0 THz | Potassium channel |
+| NMDA/calcium | 42.4 THz | Calcium transport |
+| Protein carbonyl | 53.6 THz | C=O protein vibration |
 
-- Original algorithm: [alexadam/img-encode](https://github.com/alexadam/img-encode) / [ohmpie.com](http://www.ohmpie.com/imageencode/)
-- v13 bioholographic layer: VHanma / Grok Supremacy research stack
-- Wave genetics: Gariaev et al.
-- Bioelectricity: Michael Levin (Tufts University)
-- Gene CDS resonance formula: Patent EP1372415A1
+## omni_hanma Symbolic Loci
+
+| Code | Archetype | Biological Proxy |
+|---|---|---|
+| HANMA_DEMON_001 | Demon Back / Ogre Will | ACTN3/IGF1/MSTN cluster |
+| HANMA_ADAPT_002 | Adaptive Nervous Override | BDNF/NGF/NTRK2 cluster |
+| HANMA_RECOVER_003 | Cellular Resilience Field | SIRT1/FOX03/TERT cluster |
+| HANMA_SENSE_004 | Hyper-Sensory Lock | SCN4A/KCNQ2/CHRNA7 cluster |
+| HANMA_WILL_005 | Unbreakable Will Frequency | DRD4/COMT/MAOA cluster |
+
+## Playback
+
+Open `*_audio_stereo.wav` in Sonic Visualizer or any DAW. Use headphones. Layer the optical/THz schedules as reference timing for hardware delivery if available.
+
+## Algorithm
+
+Image features (symmetry, edge density, fractal dimension, color weights, luma envelopes) drive every parameter in real time — audio gain, frequency modulation, stereo panning, optical pulse phase, THz sweep timing, and coherence simulation.
+
+Gene CDS resonance formula (EP1372415A1): `f = 60,000,000 / CDS_bp`
+
+## Legal
+
+Score output only. No hardware is controlled by this script. All frequencies are metadata annotations for reference use.
