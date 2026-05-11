@@ -22,10 +22,15 @@ Window.clearcolor = (0.05, 0.05, 0.1, 1)
 
 def get_downloads_dir():
     if platform == "android":
-        from kivy.app import App
-        app = App.get_running_app()
-        base = app.user_data_dir
-        d = os.path.join(base, "LivingImage_outputs")
+        try:
+            from jnius import autoclass
+            PythonActivity = autoclass("org.kivy.android.PythonActivity")
+            context = PythonActivity.mActivity
+            base = context.getExternalFilesDir(None).getAbsolutePath()
+            d = os.path.join(base, "LivingImage_outputs")
+        except Exception:
+            app = App.get_running_app()
+            d = os.path.join(app.user_data_dir, "LivingImage_outputs")
     else:
         d = os.path.expanduser("~/LivingImage_outputs")
     os.makedirs(d, exist_ok=True)
@@ -116,7 +121,7 @@ class LivingImageApp(App):
 
         scroll = ScrollView()
         self.log_label = Label(
-            text="Ready. On-device mode locked.\n",
+            text="Ready. On-device mode locked. Storage fix v2 active.\n",
             markup=True,
             font_size="12sp",
             size_hint_y=None,
