@@ -22,8 +22,10 @@ Window.clearcolor = (0.05, 0.05, 0.1, 1)
 
 def get_downloads_dir():
     if platform == "android":
-        from android.storage import primary_external_storage_path
-        d = os.path.join(primary_external_storage_path(), "LivingImage")
+        from kivy.app import App
+        app = App.get_running_app()
+        base = app.user_data_dir
+        d = os.path.join(base, "LivingImage_outputs")
     else:
         d = os.path.expanduser("~/LivingImage_outputs")
     os.makedirs(d, exist_ok=True)
