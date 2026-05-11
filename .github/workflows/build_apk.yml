@@ -29,9 +29,8 @@ jobs:
         run: |
           sdkmanager --install "build-tools;33.0.2" "platforms;android-33" "platform-tools" "ndk;25.2.9519653"
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653" >> $GITHUB_ENV
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
 
-      - name: Install Python deps
+      - name: Install system + Python deps
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
@@ -41,7 +40,7 @@ jobs:
           pip install --upgrade pip
           pip install buildozer cython
 
-      - name: Cache Buildozer global
+      - name: Cache Buildozer
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
@@ -49,13 +48,8 @@ jobs:
           restore-keys: buildozer-${{ runner.os }}-
 
       - name: Build APK
-        env:
-          ANDROIDAPI: "33"
-          ANDROIDMINAPI: "24"
-          ANDROIDNDK: ${{ env.ANDROID_NDK_HOME }}
         run: |
           buildozer android debug 2>&1 | tee build.log
-          echo "=== APK files ==="
           find bin/ -name "*.apk" 2>/dev/null || echo "No APK found"
 
       - name: Upload APK
