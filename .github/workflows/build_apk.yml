@@ -22,15 +22,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android build-tools + platform
-        run: |
-          sdkmanager --install "build-tools;33.0.2" "platforms;android-33" "platform-tools" "ndk;25.2.9519653"
-          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653" >> $GITHUB_ENV
-
-      - name: Install system + Python deps
+      - name: Install system deps
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
@@ -48,8 +40,14 @@ jobs:
           restore-keys: buildozer-${{ runner.os }}-
 
       - name: Build APK
+        env:
+          ANDROIDSDK: /home/runner/.buildozer/android/platform/android-sdk
+          ANDROIDNDK: /home/runner/.buildozer/android/platform/android-ndk-r25b
+          ANDROIDAPI: "33"
+          ANDROIDMINAPI: "24"
         run: |
           buildozer android debug 2>&1 | tee build.log
+          echo "=== APK files ==="
           find bin/ -name "*.apk" 2>/dev/null || echo "No APK found"
 
       - name: Upload APK
