@@ -177,7 +177,8 @@ class LivingImageApp(App):
             return
         duration = int(self.duration_input.text or '300')
         theme = self.theme_spinner.text
-        server_mode = self.btn_server.state == 'down'
+        server_mode = False  # hard-locked to on-device mode
+        self.log('Mode locked: On-Device')
         self.running = True
         self.run_btn.disabled = True
         self.set_progress(0)
