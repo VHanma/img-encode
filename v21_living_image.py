@@ -81,6 +81,30 @@ class LivingImageV21:
         out = self.output_dir
         files = []
 
+        v6_error_path = None
+        try:
+            from stacked_morphogenetic_encoder_android_v6 import build_composite as build_v6_stack
+            v6_dir = out / f"{prefix}_v6_stack"
+            v6_result = build_v6_stack(
+                image_path=image_path,
+                symbol_image_path=None,
+                tokens=[self.theme, "repair", "cohere", "restore", "symmetry", "integrate"],
+                out_dir=str(v6_dir),
+                sample_rate=48000,
+                duration_sec=min(float(self.duration_s), 30.0),
+                scan_mode="spiral",
+                export_stems=False,
+                export_ultrasonic=True,
+            )
+            for v6_file in v6_result.get("generated_files", []):
+                vf = Path(v6_file)
+                if vf.exists():
+                    files.append(vf)
+        except Exception as e:
+            v6_error_path = out / f"{prefix}_v6_stack_error.txt"
+            v6_error_path.write_text("v6 stack failed: " + repr(e), encoding="utf-8")
+            files.append(v6_error_path)
+
         img, rgb, luma, edge, phase, amp = self.load_maps(image_path)
         features = self.features(image_path, img_sha, img, rgb, luma, edge, phase, amp)
         carriers = self.carriers()
