@@ -1,28 +1,22 @@
 name: Build APK
 
 on:
-  push:
-    branches:
-      - main
-      - master
-      - android-app
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
 
     steps:
-      - name: Checkout repo
+      - name: Run actions/checkout@v4
         uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.11.15"
 
-      - name: Set up Java 17
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: "temurin"
@@ -30,127 +24,123 @@ jobs:
 
       - name: Install system deps
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            git zip unzip openjdk-17-jdk \
-            build-essential libffi-dev libssl-dev \
-            python3-dev autoconf libtool pkg-config \
-            zlib1g-dev libncurses5-dev libncursesw5-dev \
-            cmake libltdl-dev
+          set -eux
+          sudo apt-get update
+          sudo apt-get install -y \
+            git zip unzip curl wget \
+            autoconf automake libtool pkg-config \
+            zlib1g-dev libncurses5 libncursesw5-dev \
+            libffi-dev libssl-dev libsqlite3-dev \
+            libjpeg-dev libpng-dev \
+            build-essential ccache
 
-      - name: Install Python deps
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install --upgrade buildozer virtualenv
-          python -m pip install "Cython==0.29.36"
+      - name: Cache Buildozer
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer
+            .buildozer
+          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec', 'main.py', 'v21_living_image.py', 'stacked_morphogenetic_encoder_android_v6.py') }}
+          restore-keys: |
+            buildozer-${{ runner.os }}-
 
-      - name: Clone stable python-for-android
+      - name: Install Python dependencies
         run: |
-          rm -rf "$RUNNER_TEMP/p4a-stable"
-          git clone --depth 1 --branch v2024.01.21 https://github.com/kivy/python-for-android.git "$RUNNER_TEMP/p4a-stable"
+          set -eux
+          python -m pip install --upgrade pip wheel setuptools virtualenv
+          python -m pip install buildozer==1.5.0 "Cython==0.29.36" sh==1.14.3 appdirs colorama jinja2
+
+      - name: Prepare Buildozer spec
+        run: |
+          set -eux
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path("buildozer.spec")
+          if not p.exists():
+              raise SystemExit("buildozer.spec missing")
+
+          s = p.read_text()
+
+          def set_kv(text, key, value):
+              pat = re.compile(rf"^#?\s*{re.escape(key)}\s*=.*$", re.M)
+              line = f"{key} = {value}"
+              if pat.search(text):
+                  return pat.sub(line, text)
+              return text.rstrip() + "\n" + line + "\n"
+
+          s = set_kv(s, "requirements", "python3==3.11.5,hostpython3==3.11.5,kivy==2.3.0,pillow,numpy,requests,androidstorage4kivy,svgwrite")
+          s = set_kv(s, "android.api", "33")
+          s = set_kv(s, "android.minapi", "24")
+          s = set_kv(s, "android.ndk_api", "24")
+          s = set_kv(s, "android.archs", "arm64-v8a")
+          s = set_kv(s, "android.permissions", "READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,INTERNET")
+          s = set_kv(s, "source.exclude_dirs", ".git,.github,.buildozer,bin,build,dist,v1-python,v2-js,v3,p4a-stable,encoder_android_output,encoder_android_output_v6,__pycache__")
+          s = set_kv(s, "log_level", "2")
+
+          p.write_text(s, newline="\n")
+          PY
+
+          echo "===== buildozer.spec key lines ====="
+          grep -n "requirements\|android.api\|android.minapi\|android.ndk_api\|android.archs\|android.permissions\|source.exclude_dirs\|log_level" buildozer.spec || true
 
       - name: Build APK
         run: |
-          export JAVA_HOME="$JAVA_HOME_17_X64"
-          export PATH="$JAVA_HOME/bin:$PATH"
-          java -version
-
-          cd "$GITHUB_WORKSPACE"
-
-          python - <<'PY2'
-          from pathlib import Path
-          import os
-
-          p = Path("buildozer.spec")
-          lines = p.read_text().splitlines()
-
-          clean = []
-          for line in lines:
-              stripped = line.strip()
-              if stripped.startswith(("p4a.source_dir", "p4a.branch", "p4a.url", "p4a.fork", "p4a.commit")):
-                  continue
-              clean.append(line)
-
-          out = []
-          inserted = False
-          for line in clean:
-              if line.strip() == "[buildozer]" and not inserted:
-                  out.append(f"p4a.source_dir = {os.environ['RUNNER_TEMP']}/p4a-stable")
-                  out.append("")
-                  inserted = True
-              out.append(line)
-
-          p.write_text("\n".join(out) + "\n")
-          PY2
-
-          echo "=== FINAL buildozer.spec ==="
-          cat buildozer.spec
-
-          buildozer android clean || true
-          yes | buildozer android debug 2>&1 | tee build.log
-          exit "${PIPESTATUS[1]}"
+          set -eux
+          python -m py_compile main.py v21_living_image.py stacked_morphogenetic_encoder_android_v6.py
+          yes | buildozer -v android debug 2>&1 | tee build.log
 
       - name: Find, align, and sign APK
-        if: always()
         run: |
-          export JAVA_HOME="$JAVA_HOME_17_X64"
-          export PATH="$JAVA_HOME/bin:$PATH"
+          set -eux
 
-          mkdir -p artifact-apk
+          mkdir -p artifact-apk build-log
 
-          echo "=== RAW APK SEARCH ===" | tee -a build.log
-          find "$GITHUB_WORKSPACE" -type f -iname "*.apk" | sort | tee apk-files.txt || true
+          find . -type f -iname "*.apk" -print | sort | tee build-log/apk-files.txt
 
-          if [ ! -s apk-files.txt ]; then
-            echo "No APK files found." | tee -a build.log
+          APK="$(find . -type f -iname "*.apk" | sort | tail -n 1)"
+          if [ -z "$APK" ]; then
+            echo "No APK found after build"
             exit 1
           fi
 
-          RAW_APK="$(head -n 1 apk-files.txt)"
-          echo "Using raw APK: $RAW_APK" | tee -a build.log
+          echo "Original APK: $APK"
+          cp "$APK" artifact-apk/original-livingimage.apk
 
-          cp "$RAW_APK" artifact-apk/original-livingimage.apk
+          BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
+          ZIPALIGN="$BUILD_TOOLS/zipalign"
+          APKSIGNER="$BUILD_TOOLS/apksigner"
 
-          ZIPALIGN="$(find "$ANDROID_HOME/build-tools" -name zipalign | sort -V | tail -n 1)"
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)"
-
-          echo "zipalign: $ZIPALIGN" | tee -a build.log
-          echo "apksigner: $APKSIGNER" | tee -a build.log
+          "$ZIPALIGN" -p -f 4 artifact-apk/original-livingimage.apk artifact-apk/LivingImage-v20-aligned.apk
 
           keytool -genkeypair \
             -v \
-            -keystore artifact-apk/debug.keystore \
+            -keystore artifact-apk/debug-upload-key.jks \
             -storepass android \
-            -alias androiddebugkey \
             -keypass android \
+            -alias livingimage \
             -keyalg RSA \
             -keysize 2048 \
             -validity 10000 \
-            -dname "CN=Android Debug,O=Android,C=US"
-
-          "$ZIPALIGN" -p -f 4 "$RAW_APK" artifact-apk/LivingImage-v20-aligned.apk
+            -dname "CN=VHanma Living Image,O=VHanma,C=US"
 
           "$APKSIGNER" sign \
-            --ks artifact-apk/debug.keystore \
+            --ks artifact-apk/debug-upload-key.jks \
             --ks-pass pass:android \
             --key-pass pass:android \
-            --v1-signing-enabled true \
-            --v2-signing-enabled true \
-            --v3-signing-enabled true \
             --out artifact-apk/LivingImage-v20-signed.apk \
             artifact-apk/LivingImage-v20-aligned.apk
 
-          echo "=== SIGNATURE VERIFY ===" | tee -a build.log
           "$APKSIGNER" verify --verbose artifact-apk/LivingImage-v20-signed.apk | tee -a build.log
 
-          echo "=== artifact-apk contents ===" | tee -a build.log
-          find artifact-apk -type f | sort | tee -a build.log
+          ls -lh artifact-apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: LivingImage-v20-signed
-          path: artifact-apk/*.apk
+          path: artifact-apk/*
           if-no-files-found: error
 
       - name: Upload build log
@@ -160,5 +150,5 @@ jobs:
           name: build-log
           path: |
             build.log
-            apk-files.txt
-          if-no-files-found: warn
+            build-log/*
+          if-no-files-found: ignore
