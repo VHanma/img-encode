@@ -205,7 +205,7 @@ class LivingImageApp(App):
         scroll = ScrollView()
 
         self.log_label = Label(
-            text="Ready. On-device mode locked. Storage fix v2 + Pillow fix v3 + Export full replacement v5 active.\n",
+            text="Ready. On-device mode locked. Storage fix v2 + Pillow fix v3 + Export full replacement v5 + V21 engine active.\n",
             markup=True,
             font_size="12sp",
             size_hint_y=None,
@@ -326,14 +326,14 @@ class LivingImageApp(App):
             if app_dir not in sys.path:
                 sys.path.insert(0, app_dir)
 
-            from v20_living_image import LivingImageV20
+            from v21_living_image import LivingImageV21
 
             out_dir = get_downloads_dir()
             self.log("Output: %s" % out_dir)
 
             self.set_progress(10)
 
-            encoder = LivingImageV20(
+            encoder = LivingImageV21(
                 duration_s=duration,
                 output_dir=out_dir,
                 theme=theme,
