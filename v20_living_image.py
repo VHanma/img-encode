@@ -145,7 +145,7 @@ class LivingImageV20:
     def load_image(self, path: str, max_side: int = 1536) -> Tuple[np.ndarray, np.ndarray]:
         img = Image.open(path).convert("RGB")
         img = ImageOps.exif_transpose(img)
-        img.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+        img.thumbnail((max_side, max_side), getattr(getattr(Image, "Resampling", Image), "LANCZOS", getattr(Image, "LANCZOS", getattr(Image, "BICUBIC", 3))))
         rgb = np.asarray(img).astype(np.float64) / 255.0
         gray = np.asarray(ImageOps.grayscale(img)).astype(np.float64) / 255.0
         return rgb, gray

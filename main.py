@@ -121,7 +121,7 @@ class LivingImageApp(App):
 
         scroll = ScrollView()
         self.log_label = Label(
-            text="Ready. On-device mode locked. Storage fix v2 active.\n",
+            text="Ready. On-device mode locked. Storage fix v2 + Pillow fix v3 active.\n",
             markup=True,
             font_size="12sp",
             size_hint_y=None,
@@ -224,6 +224,9 @@ class LivingImageApp(App):
             enc = LivingImageV20(duration_s=duration, output_dir=out_dir, theme=theme)
             self.log("Running encode. This can take a while...")
             manifest = enc.run(image_path)
+
+            if not isinstance(manifest, dict):
+                manifest = {"files": []}
 
             self.set_progress(95)
             n = len(manifest.get("files", []))
