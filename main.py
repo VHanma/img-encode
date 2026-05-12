@@ -1,40 +1,97 @@
 """
-Living Image v20 — Android on-device encoder.
-Server mode removed.
+Living Image v20 — full replacement main.py
+On-device locked.
+Safe app storage.
+Exports finished output as a ZIP into shared Downloads.
 """
 
 import os
+import time
+import zipfile
 import threading
+import traceback
+
 from kivy.app import App
+from kivy.clock import mainthread
+from kivy.core.window import Window
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.label import Label
+from kivy.uix.progressbar import ProgressBar
+from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner
 from kivy.uix.textinput import TextInput
-from kivy.uix.scrollview import ScrollView
-from kivy.uix.progressbar import ProgressBar
-from kivy.clock import mainthread
 from kivy.utils import platform
-from kivy.core.window import Window
 
-Window.clearcolor = (0.05, 0.05, 0.1, 1)
+Window.clearcolor = (0.05, 0.05, 0.10, 1)
 
 
 def get_downloads_dir():
     if platform == "android":
         try:
             from jnius import autoclass
+
             PythonActivity = autoclass("org.kivy.android.PythonActivity")
             context = PythonActivity.mActivity
             base = context.getExternalFilesDir(None).getAbsolutePath()
-            d = os.path.join(base, "LivingImage_outputs")
+            out_dir = os.path.join(base, "LivingImage_outputs")
         except Exception:
             app = App.get_running_app()
-            d = os.path.join(app.user_data_dir, "LivingImage_outputs")
+            out_dir = os.path.join(app.user_data_dir, "LivingImage_outputs")
     else:
-        d = os.path.expanduser("~/LivingImage_outputs")
-    os.makedirs(d, exist_ok=True)
-    return d
+        out_dir = os.path.expanduser("~/LivingImage_outputs")
+
+    os.makedirs(out_dir, exist_ok=True)
+    return out_dir
+
+
+def export_output_zip(out_dir):
+    zip_name = "LivingImage_export_%s.zip" % time.strftime("%Y%m%d_%H%M%S")
+    zip_path = os.path.join(out_dir, zip_name)
+
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+        for root, dirs, files in os.walk(out_dir):
+            for name in files:
+                full = os.path.join(root, name)
+
+                if full == zip_path:
+                    continue
+
+                if name.lower().endswith(".zip"):
+                    continue
+
+                arc = os.path.relpath(full, out_dir)
+                z.write(full, arc)
+
+    if platform != "android":
+        return zip_path, zip_path
+
+    try:
+        from jnius import autoclass
+        from androidstorage4kivy import SharedStorage
+
+        Environment = autoclass("android.os.Environment")
+        ss = SharedStorage()
+
+        shared_ref = ss.copy_to_shared(
+            zip_path,
+            collection=Environment.DIRECTORY_DOWNLOADS,
+            filepath=os.path.join("LivingImage_export", zip_name),
+        )
+
+        if shared_ref:
+            return zip_path, str(shared_ref)
+
+        shared_ref = ss.copy_to_shared(
+            zip_path,
+            collection=Environment.DIRECTORY_DOCUMENTS,
+            filepath=os.path.join("LivingImage_export", zip_name),
+        )
+
+        return zip_path, str(shared_ref)
+
+    except Exception as e:
+        return zip_path, "Shared export failed: %r" % e
 
 
 class LivingImageApp(App):
@@ -42,32 +99,42 @@ class LivingImageApp(App):
         self.image_path = None
         self.running = False
 
-        root = BoxLayout(orientation="vertical", padding=16, spacing=10)
+        root = BoxLayout(orientation="vertical", padding=12, spacing=8)
 
-        root.add_widget(Label(
-            text="[b]Living Image v20[/b]",
-            markup=True,
-            font_size="22sp",
-            size_hint_y=None,
-            height=44,
-            color=(0.4, 0.9, 1, 1),
-        ))
+        root.add_widget(
+            Label(
+                text="[b]Living Image v20[/b]",
+                markup=True,
+                font_size="22sp",
+                size_hint_y=None,
+                height=42,
+                color=(0.4, 0.9, 1, 1),
+            )
+        )
 
-        mode_row = BoxLayout(size_hint_y=None, height=44, spacing=8)
-        mode_row.add_widget(Label(text="Mode:", size_hint_x=0.25, color=(0.8, 0.8, 0.8, 1)))
-        mode_row.add_widget(Label(
-            text="[b]On-Device Locked[/b]",
-            markup=True,
-            color=(0.4, 1, 0.6, 1),
-            font_size="16sp",
-        ))
+        mode_row = BoxLayout(size_hint_y=None, height=36, spacing=8)
+        mode_row.add_widget(
+            Label(
+                text="Mode:",
+                size_hint_x=0.25,
+                color=(0.85, 0.85, 0.85, 1),
+            )
+        )
+        mode_row.add_widget(
+            Label(
+                text="[b]On-Device Locked[/b]",
+                markup=True,
+                color=(0.4, 1, 0.6, 1),
+                font_size="16sp",
+            )
+        )
         root.add_widget(mode_row)
 
         self.pick_btn = Button(
             text="Pick Image",
             size_hint_y=None,
-            height=52,
-            background_color=(0.15, 0.6, 0.3, 1),
+            height=46,
+            background_color=(0.1, 0.55, 0.25, 1),
             font_size="16sp",
         )
         self.pick_btn.bind(on_press=self.pick_image)
@@ -76,16 +143,24 @@ class LivingImageApp(App):
         self.img_label = Label(
             text="No image selected",
             size_hint_y=None,
-            height=30,
-            color=(0.6, 0.6, 0.6, 1),
+            height=28,
+            color=(0.65, 0.65, 0.65, 1),
             font_size="12sp",
         )
         root.add_widget(self.img_label)
 
-        opt_row = BoxLayout(size_hint_y=None, height=44, spacing=8)
-        opt_row.add_widget(Label(text="Duration(s):", size_hint_x=0.32, color=(0.8, 0.8, 0.8, 1)))
+        opt_row = BoxLayout(size_hint_y=None, height=40, spacing=8)
+
+        opt_row.add_widget(
+            Label(
+                text="Duration(s):",
+                size_hint_x=0.32,
+                color=(0.85, 0.85, 0.85, 1),
+            )
+        )
+
         self.duration_input = TextInput(
-            text="300",
+            text="30",
             multiline=False,
             input_filter="int",
             background_color=(0.1, 0.1, 0.2, 1),
@@ -95,42 +170,52 @@ class LivingImageApp(App):
         )
         opt_row.add_widget(self.duration_input)
 
-        opt_row.add_widget(Label(text="Theme:", size_hint_x=0.22, color=(0.8, 0.8, 0.8, 1)))
+        opt_row.add_widget(
+            Label(
+                text="Theme:",
+                size_hint_x=0.22,
+                color=(0.85, 0.85, 0.85, 1),
+            )
+        )
+
         self.theme_spinner = Spinner(
             text="omni_hanma",
             values=["omni_hanma", "neural_regeneration", "general_regeneration"],
-            size_hint_x=0.45,
-            background_color=(0.1, 0.3, 0.6, 1),
+            size_hint_x=0.50,
+            background_color=(0.1, 0.25, 0.55, 1),
         )
         opt_row.add_widget(self.theme_spinner)
+
         root.add_widget(opt_row)
 
         self.run_btn = Button(
             text="RUN ENCODE",
             size_hint_y=None,
-            height=58,
-            background_color=(0.8, 0.2, 0.9, 1),
+            height=52,
+            background_color=(0.65, 0.15, 0.75, 1),
             font_size="18sp",
             bold=True,
         )
         self.run_btn.bind(on_press=self.run_encode)
         root.add_widget(self.run_btn)
 
-        self.progress = ProgressBar(max=100, value=0, size_hint_y=None, height=18)
+        self.progress = ProgressBar(max=100, value=0, size_hint_y=None, height=14)
         root.add_widget(self.progress)
 
         scroll = ScrollView()
+
         self.log_label = Label(
-            text="Ready. On-device mode locked. Storage fix v2 + Pillow fix v3 active.\n",
+            text="Ready. On-device mode locked. Storage fix v2 + Pillow fix v3 + Export full replacement v5 active.\n",
             markup=True,
             font_size="12sp",
             size_hint_y=None,
             valign="top",
             halign="left",
             color=(0.7, 1, 0.7, 1),
-            padding=(8, 8),
+            padding=(6, 6),
         )
         self.log_label.bind(texture_size=self.log_label.setter("size"))
+
         scroll.add_widget(self.log_label)
         root.add_widget(scroll)
 
@@ -140,58 +225,82 @@ class LivingImageApp(App):
         if platform == "android":
             try:
                 from android.permissions import request_permissions, Permission
-                request_permissions([
-                    Permission.READ_EXTERNAL_STORAGE,
-                    Permission.WRITE_EXTERNAL_STORAGE,
-                ])
+
+                perms = []
+
+                if hasattr(Permission, "READ_MEDIA_IMAGES"):
+                    perms.append(Permission.READ_MEDIA_IMAGES)
+
+                if hasattr(Permission, "READ_EXTERNAL_STORAGE"):
+                    perms.append(Permission.READ_EXTERNAL_STORAGE)
+
+                if hasattr(Permission, "WRITE_EXTERNAL_STORAGE"):
+                    perms.append(Permission.WRITE_EXTERNAL_STORAGE)
+
+                if perms:
+                    request_permissions(perms)
+
             except Exception:
                 pass
 
             try:
                 from androidstorage4kivy import SharedStorage, Chooser
+
                 self._chooser = Chooser(self._on_image_chosen)
                 self._chooser.choose_content("image/*")
+
             except Exception as e:
-                self.log(f"[color=ff4444]Picker error: {e}[/color]")
+                self.log("[color=ff4444]Picker error: %s[/color]" % e)
+
         else:
             from kivy.uix.filechooser import FileChooserIconView
             from kivy.uix.popup import Popup
 
-            fc = FileChooserIconView(filters=["*.jpg", "*.jpeg", "*.png"])
-            popup = Popup(title="Pick Image", content=fc, size_hint=(0.9, 0.9))
+            chooser = FileChooserIconView(filters=["*.jpg", "*.jpeg", "*.png"])
+            popup = Popup(title="Pick Image", content=chooser, size_hint=(0.9, 0.9))
 
-            def _sel(inst, val, *a):
-                if val:
-                    self.image_path = val[0]
-                    self.img_label.text = os.path.basename(val[0])
+            def on_submit(instance, selection, touch=None):
+                if selection:
+                    self.image_path = selection[0]
+                    self.img_label.text = os.path.basename(self.image_path)
                     popup.dismiss()
 
-            fc.bind(on_submit=_sel)
+            chooser.bind(on_submit=on_submit)
             popup.open()
 
     def _on_image_chosen(self, uri_list):
         if not uri_list:
             return
+
         try:
             from androidstorage4kivy import SharedStorage
+
             ss = SharedStorage()
             path = ss.copy_from_shared(uri_list[0])
+
             if path:
                 self.image_path = path
                 self.img_label.text = os.path.basename(path)
-                self.log(f"Image: {os.path.basename(path)}")
+                self.log("Image: %s" % os.path.basename(path))
+            else:
+                self.log("[color=ff4444]Image picker returned no private file.[/color]")
+
         except Exception as e:
-            self.log(f"[color=ff4444]Image load error: {e}[/color]")
+            self.log("[color=ff4444]Image load error: %s[/color]" % e)
 
     def run_encode(self, *args):
         if self.running:
             return
 
         if not self.image_path or not os.path.exists(self.image_path):
-            self.log("[color=ff4444]Please pick an image first.[/color]")
+            self.log("[color=ff4444]Pick an image first.[/color]")
             return
 
-        duration = int(self.duration_input.text or "300")
+        try:
+            duration = int(self.duration_input.text or "30")
+        except Exception:
+            duration = 30
+
         theme = self.theme_spinner.text
 
         self.log("Mode locked: On-Device")
@@ -199,18 +308,20 @@ class LivingImageApp(App):
         self.run_btn.disabled = True
         self.set_progress(0)
 
-        threading.Thread(
+        thread = threading.Thread(
             target=self._run_device,
             args=(self.image_path, duration, theme),
             daemon=True,
-        ).start()
+        )
+        thread.start()
 
     def _run_device(self, image_path, duration, theme):
-        self.log("Starting on-device encode...")
-        self.set_progress(5)
-
         try:
+            self.log("Starting on-device encode...")
+            self.set_progress(5)
+
             import sys
+
             app_dir = os.path.dirname(os.path.abspath(__file__))
             if app_dir not in sys.path:
                 sys.path.insert(0, app_dir)
@@ -218,24 +329,40 @@ class LivingImageApp(App):
             from v20_living_image import LivingImageV20
 
             out_dir = get_downloads_dir()
-            self.log(f"Output: {out_dir}")
+            self.log("Output: %s" % out_dir)
+
             self.set_progress(10)
 
-            enc = LivingImageV20(duration_s=duration, output_dir=out_dir, theme=theme)
+            encoder = LivingImageV20(
+                duration_s=duration,
+                output_dir=out_dir,
+                theme=theme,
+            )
+
             self.log("Running encode. This can take a while...")
-            manifest = enc.run(image_path)
+
+            manifest = encoder.run(image_path)
 
             if not isinstance(manifest, dict):
                 manifest = {"files": []}
 
-            self.set_progress(95)
-            n = len(manifest.get("files", []))
-            self.log(f"[color=00ff99]Done! {n} files saved to:[/color]\n{out_dir}")
+            self.set_progress(90)
+
+            zip_path, shared_ref = export_output_zip(out_dir)
+
+            files = manifest.get("files", [])
+            file_count = len(files) if isinstance(files, list) else 0
+
+            self.log("[color=00ff99]Done! %s files saved to:[/color]\n%s" % (file_count, out_dir))
+            self.log("[color=00ff99]Export ZIP created:[/color]\n%s" % zip_path)
+            self.log("[color=00ff99]Shared export target:[/color]\n%s" % shared_ref)
+            self.log("[color=00ff99]Check Files app: Downloads > LivingImage_export[/color]")
+
             self.set_progress(100)
 
         except Exception as e:
-            import traceback
-            self.log(f"[color=ff4444]Error: {e}\n{traceback.format_exc()}[/color]")
+            self.log("[color=ff4444]Error: %s\n%s[/color]" % (e, traceback.format_exc()))
+
         finally:
             self._done()
 
@@ -244,8 +371,8 @@ class LivingImageApp(App):
         self.log_label.text += msg + "\n"
 
     @mainthread
-    def set_progress(self, val):
-        self.progress.value = val
+    def set_progress(self, value):
+        self.progress.value = value
 
     @mainthread
     def _done(self):
