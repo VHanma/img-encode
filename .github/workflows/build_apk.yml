@@ -40,7 +40,7 @@ jobs:
           path: |
             ~/.buildozer
             .buildozer
-          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec', 'main.py', 'v21_living_image.py', 'stacked_morphogenetic_encoder_android_v6.py') }}
+          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec', 'main.py', 'v22_living_image.py') }}
           restore-keys: |
             buildozer-${{ runner.os }}-
 
@@ -88,7 +88,7 @@ jobs:
       - name: Build APK
         run: |
           set -eux
-          python -m py_compile main.py v21_living_image.py stacked_morphogenetic_encoder_android_v6.py
+          python -m py_compile main.py
           yes | buildozer -v android debug 2>&1 | tee build.log
 
       - name: Find, align, and sign APK
@@ -112,7 +112,7 @@ jobs:
           ZIPALIGN="$BUILD_TOOLS/zipalign"
           APKSIGNER="$BUILD_TOOLS/apksigner"
 
-          "$ZIPALIGN" -p -f 4 artifact-apk/original-livingimage.apk artifact-apk/LivingImage-v20-aligned.apk
+          "$ZIPALIGN" -p -f 4 artifact-apk/original-livingimage.apk artifact-apk/LivingImage-v22-aligned.apk
 
           keytool -genkeypair \
             -v \
@@ -129,17 +129,17 @@ jobs:
             --ks artifact-apk/debug-upload-key.jks \
             --ks-pass pass:android \
             --key-pass pass:android \
-            --out artifact-apk/LivingImage-v20-signed.apk \
-            artifact-apk/LivingImage-v20-aligned.apk
+            --out artifact-apk/LivingImage-v22-signed.apk \
+            artifact-apk/LivingImage-v22-aligned.apk
 
-          "$APKSIGNER" verify --verbose artifact-apk/LivingImage-v20-signed.apk | tee -a build.log
+          "$APKSIGNER" verify --verbose artifact-apk/LivingImage-v22-signed.apk | tee -a build.log
 
           ls -lh artifact-apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: LivingImage-v20-signed
+          name: LivingImage-v22-signed
           path: artifact-apk/*
           if-no-files-found: error
 
