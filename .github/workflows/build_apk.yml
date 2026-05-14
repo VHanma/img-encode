@@ -2,6 +2,8 @@ name: Build APK
 
 on:
   workflow_dispatch:
+  push:
+    branches: [master]
 
 jobs:
   build:
@@ -40,8 +42,9 @@ jobs:
           path: |
             ~/.buildozer
             .buildozer
-          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec', 'main.py', 'v22_living_image.py') }}
+          key: buildozer-${{ runner.os }}-v22-${{ hashFiles('buildozer.spec', 'main.py', 'v22_living_image.py') }}
           restore-keys: |
+            buildozer-${{ runner.os }}-v22-
             buildozer-${{ runner.os }}-
 
       - name: Install Python dependencies
@@ -70,7 +73,7 @@ jobs:
                   return pat.sub(line, text)
               return text.rstrip() + "\n" + line + "\n"
 
-          s = set_kv(s, "requirements", "python3==3.11.5,hostpython3==3.11.5,kivy==2.3.0,pillow,numpy,requests,androidstorage4kivy,svgwrite")
+          s = set_kv(s, "requirements", "python3==3.11.5,hostpython3==3.11.5,kivy==2.3.0,pillow,numpy==1.26.4,requests,androidstorage4kivy,svgwrite")
           s = set_kv(s, "android.api", "33")
           s = set_kv(s, "android.minapi", "24")
           s = set_kv(s, "android.ndk_api", "24")
@@ -108,9 +111,29 @@ jobs:
           echo "Original APK: $APK"
           cp "$APK" artifact-apk/original-livingimage.apk
 
-          BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
-          ZIPALIGN="$BUILD_TOOLS/zipalign"
-          APKSIGNER="$BUILD_TOOLS/apksigner"
+          # Find build-tools — check buildozer's SDK first, then runner's ANDROID_HOME
+          BT_DIR=""
+          for sdk_root in \
+            "$HOME/.buildozer/android/platform/android-sdk" \
+            "${ANDROID_HOME:-/usr/local/lib/android/sdk}" \
+            "/usr/local/lib/android/sdk" \
+            "/opt/android-sdk"; do
+            if [ -d "$sdk_root/build-tools" ]; then
+              BT_DIR="$(ls -d "$sdk_root/build-tools"/* 2>/dev/null | sort -V | tail -n 1)"
+              [ -n "$BT_DIR" ] && break
+            fi
+          done
+
+          if [ -z "$BT_DIR" ]; then
+            echo "No build-tools found in any SDK location — installing via sdkmanager"
+            SDKMANAGER="$HOME/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager"
+            yes | "$SDKMANAGER" "build-tools;34.0.0" || true
+            BT_DIR="$HOME/.buildozer/android/platform/android-sdk/build-tools/34.0.0"
+          fi
+
+          echo "Using build-tools: $BT_DIR"
+          ZIPALIGN="$BT_DIR/zipalign"
+          APKSIGNER="$BT_DIR/apksigner"
 
           "$ZIPALIGN" -p -f 4 artifact-apk/original-livingimage.apk artifact-apk/LivingImage-v22-aligned.apk
 
