@@ -22,6 +22,7 @@ from kivy.core.window import Window
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.label import Label
+from kivy.uix.popup import Popup
 from kivy.uix.progressbar import ProgressBar
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
@@ -39,6 +40,11 @@ F_HIGH       = 20000.0
 N_FREQ_BINS  = 512
 FRAME_HOP    = 512
 MAX_IMG_COLS = 1024
+
+LASER_NM      = 632.8
+LASER_HZ      = 3e8 / (LASER_NM * 1e-9)
+PIXEL_SIZE_UM = 5.0
+SONIFY_BLEND  = 0.35
 
 
 def _norm01(a):
@@ -76,7 +82,6 @@ def _image_fft2(gray):
     F_shifted = np.fft.fftshift(F)
     mag   = np.abs(F_shifted)
     phase = np.angle(F_shifted)
-    mag_norm = _norm01(mag)
     h, w  = mag.shape
     cy, cx = h // 2, w // 2
     Y, X  = np.ogrid[:h, :w]
@@ -88,8 +93,44 @@ def _image_fft2(gray):
     peak_r     = int(np.argmax(radial[1:]) + 1)
     mean_phase = float(np.mean(phase))
     dc_amp     = float(mag[cy, cx] / (mag.mean() + 1e-12))
-    return {"mag_norm": mag_norm, "phase": phase, "radial": radial,
+    return {"mag_norm": _norm01(mag), "phase": phase, "radial": radial,
             "peak_r": peak_r, "mean_phase": mean_phase, "dc_amp": dc_amp}
+
+
+def _laser_diffraction_layer(gray, fft_freqs, n_rfft):
+    h, w = gray.shape
+    F = np.fft.fft2(gray)
+    mag = np.abs(np.fft.fftshift(F))
+    pixel_size_m = PIXEL_SIZE_UM * 1e-6
+    freq_y = np.fft.fftshift(np.fft.fftfreq(h, d=pixel_size_m))
+    freq_x = np.fft.fftshift(np.fft.fftfreq(w, d=pixel_size_m))
+    FX, FY = np.meshgrid(freq_x, freq_y)
+    R_spatial = np.sqrt(FX**2 + FY**2)
+    lambda_m = LASER_NM * 1e-9
+    sin_theta = np.clip(R_spatial * lambda_m, -1.0, 1.0)
+    theta = np.arcsin(sin_theta)
+    half_pi = math.pi / 2.0
+    audio_hz = (theta / half_pi) * (F_HIGH - F_LOW) + F_LOW
+    audio_hz_flat = audio_hz.ravel()
+    mag_flat = mag.ravel()
+    spectrum = np.zeros(n_rfft, dtype=np.float64)
+    bin_indices = np.searchsorted(fft_freqs, audio_hz_flat).clip(0, n_rfft - 1)
+    np.add.at(spectrum, bin_indices, mag_flat)
+    pk = spectrum.max()
+    if pk > 1e-12:
+        spectrum /= pk
+    return spectrum
+
+
+def _sonify_column(col_pixels, fft_freqs, n_rfft):
+    n_rows  = len(col_pixels)
+    freqs   = _log_freq_axis(n_rows, F_LOW, F_HIGH)
+    X       = np.zeros(n_rfft, dtype=np.complex128)
+    bin_idx = np.interp(freqs, fft_freqs, np.arange(n_rfft)).astype(int)
+    bin_idx = np.clip(bin_idx, 0, n_rfft - 1)
+    mask    = col_pixels > 1e-9
+    np.add.at(X, bin_idx[mask], col_pixels[mask].astype(np.complex128))
+    return X
 
 
 def _rat(radial, idx):
@@ -100,23 +141,18 @@ def _rat(radial, idx):
 def _council_levin(radial, peak_r):
     return _rat(radial, max(1, peak_r // 4))
 
-
 def _council_scalar(radial, mean_phase):
     return _rat(radial, len(radial) // 2) * (0.5 + 0.5 * math.cos(mean_phase))
 
-
 def _council_morphic(radial, dc_amp):
     return min(1.0, dc_amp / (math.pi * 4)) * _rat(radial, len(radial) * 3 // 4)
-
 
 def _council_zpf(radial):
     hi = len(radial) * 3 // 4
     return float(np.mean(radial[hi:])) if len(radial) > hi else 0.01
 
-
 def _council_tesla(radial, peak_r):
     return _rat(radial, peak_r)
-
 
 def _council_schumann(radial, dc_amp):
     return _rat(radial, 2) * min(1.0, 1.0 / (dc_amp + 1e-3))
@@ -125,31 +161,25 @@ def _council_schumann(radial, dc_amp):
 def _nearest_bin(fft_freqs, freq_hz):
     return int(np.argmin(np.abs(fft_freqs - freq_hz)))
 
-
 def _img_freq(f_low, f_high, ratio):
     return f_low * ((f_high / f_low) ** max(0.0, min(1.0, ratio)))
-
 
 def _add_levin(X, fft_freqs, col, n_frames, amp):
     bi = _nearest_bin(fft_freqs, _img_freq(40.0, 200.0, 0.25))
     X[bi] += amp * 0.15 * np.exp(1j * 2 * math.pi * col / max(1, n_frames))
 
-
 def _add_scalar(X, fft_freqs, col, n_frames, amp, mean_phase):
     bi = _nearest_bin(fft_freqs, _img_freq(300.0, 900.0, 0.5))
     X[bi] += amp * 0.12 * np.exp(1j * (mean_phase + 2 * math.pi * col / max(1, n_frames)))
-
 
 def _add_morphic(X, fft_freqs, col, n_frames, amp):
     bi = _nearest_bin(fft_freqs, _img_freq(60.0, 250.0, 0.5))
     X[bi] += amp * 0.10 * np.exp(1j * math.pi * col / max(1, n_frames))
 
-
 def _add_zpf(X, amp):
     energy = np.abs(X)
     total  = energy.sum() + 1e-12
     X += amp * 0.05 * (energy / total) * np.exp(1j * np.angle(X + 1e-12))
-
 
 def _add_tesla(X, fft_freqs, col, n_frames, amp):
     f_base = _img_freq(100.0, 1000.0, 0.5)
@@ -159,7 +189,6 @@ def _add_tesla(X, fft_freqs, col, n_frames, amp):
             break
         bi = _nearest_bin(fft_freqs, f)
         X[bi] += amp * w * np.exp(1j * 2 * math.pi * mult * col / max(1, n_frames))
-
 
 def _add_schumann(X, fft_freqs, col, n_frames, amp):
     for f, w in [(7.83, 0.12), (14.3, 0.08), (20.8, 0.05), (27.3, 0.03), (33.8, 0.02)]:
@@ -197,6 +226,8 @@ def _write_wav_streaming(path, sr, duration_s, spec, fft_data,
     tesla_amp    = _council_tesla(radial, peak_r)
     schumann_amp = _council_schumann(radial, dc_amp)
 
+    laser_spec = _laser_diffraction_layer(spec, fft_freqs, n_rfft)
+
     ph_ys     = np.clip(
         (np.arange(n_freq_rows) * fft_data["phase"].shape[0] / n_freq_rows).astype(int),
         0, fft_data["phase"].shape[0] - 1)
@@ -220,17 +251,26 @@ def _write_wav_streaming(path, sr, duration_s, spec, fft_data,
                 col_idx = frame_idx % n_img_cols
                 col_amp = spec[:, col_idx]
                 X = np.zeros(n_rfft, dtype=np.complex128)
+
                 ph_x = min(int(col_idx * ph_n_cols / n_img_cols), ph_n_cols - 1)
                 phis = fft_data["phase"][ph_ys, ph_x]
                 mask = col_amp > 1e-9
                 np.add.at(X, fft_bin_idx[mask],
                           col_amp[mask] * np.exp(1j * phis[mask]))
+
+                X_sonify = _sonify_column(col_amp, fft_freqs, n_rfft)
+                X += SONIFY_BLEND * X_sonify
+
+                frame_phase = 2 * math.pi * frame_idx / max(1, n_total_frames)
+                X += 0.15 * laser_spec * np.exp(1j * frame_phase)
+
                 _add_levin(X,    fft_freqs, frame_idx, n_total_frames, levin_amp)
                 _add_scalar(X,   fft_freqs, frame_idx, n_total_frames, scalar_amp, mean_phase)
                 _add_morphic(X,  fft_freqs, frame_idx, n_total_frames, morphic_amp)
                 _add_zpf(X,      zpf_amp)
                 _add_tesla(X,    fft_freqs, frame_idx, n_total_frames, tesla_amp)
                 _add_schumann(X, fft_freqs, frame_idx, n_total_frames, schumann_amp)
+
                 frame_audio = np.fft.irfft(X, n=fft_size)[:hop]
                 buf[ci * hop: ci * hop + len(frame_audio)] += frame_audio
 
@@ -270,55 +310,7 @@ def _write_svg(path, spec):
     Path(path).write_text("\n".join(rows), encoding="utf-8")
 
 
-def _generate_report(image_path, spec, fft_data, duration_s, out_wav):
-    n_freq_rows, n_img_cols = spec.shape
-    freqs    = _log_freq_axis(n_freq_rows, F_LOW, F_HIGH)
-    mean_amp = spec.mean(axis=1)
-    top_idx  = np.argsort(mean_amp)[::-1][:20]
-    radial     = fft_data["radial"]
-    peak_r     = fft_data["peak_r"]
-    mean_phase = fft_data["mean_phase"]
-    dc_amp     = fft_data["dc_amp"]
-    lines = [
-        "=" * 60,
-        "LIVING IMAGE v22 — GARIAEV SPECTROGRAM REPORT",
-        "=" * 60,
-        f"Input image   : {os.path.basename(image_path)}",
-        f"Duration      : {duration_s:.1f} s",
-        f"Sample rate   : {SAMPLE_RATE} Hz",
-        f"Freq bins     : {n_freq_rows}  ({F_LOW:.1f} Hz – {F_HIGH:.1f} Hz, log)",
-        f"Image cols    : {n_img_cols}  (tiled to fill duration)",
-        f"FFT window    : {N_FREQ_BINS * 2}  hop {FRAME_HOP}",
-        f"Output WAV    : {os.path.basename(str(out_wav))}",
-        "",
-        "2D FFT DIFFRACTION METRICS",
-        f"  Peak radial mode : {peak_r}",
-        f"  Mean phase       : {mean_phase:.6f} rad",
-        f"  DC amplitude     : {dc_amp:.4f}",
-        "",
-        "TOP 20 DOMINANT FREQUENCIES (image spectrogram, mean amplitude)",
-        f"  {'Rank':>4}  {'Freq (Hz)':>12}  {'Mean Amp':>10}",
-        "-" * 40,
-    ]
-    for rank, idx in enumerate(top_idx, 1):
-        lines.append(f"  {rank:>4}  {freqs[idx]:>12.2f}  {mean_amp[idx]:>10.6f}")
-    lines += [
-        "",
-        "COUNCIL LAYERS (all parameters from image 2D FFT)",
-        f"  Levin bioelectric amp : {_council_levin(radial, peak_r):.6f}",
-        f"  Scalar DNA amp        : {_council_scalar(radial, mean_phase):.6f}",
-        f"  Morphic resonance amp : {_council_morphic(radial, dc_amp):.6f}",
-        f"  ZPF floor amp         : {_council_zpf(radial):.6f}",
-        f"  Tesla 3-6-9 amp       : {_council_tesla(radial, peak_r):.6f}",
-        f"  Schumann stack amp    : {_council_schumann(radial, dc_amp):.6f}",
-        "",
-        f"Generated : {time.strftime('%Y-%m-%dT%H:%M:%S')}",
-        "=" * 60,
-    ]
-    return "\n".join(lines)
-
-
-def run_v22(image_path, duration_s, output_dir, progress_cb=None):
+def run_v22(image_path, duration_s, output_dir, output_prefix=None, progress_cb=None):
     """Run the v22 engine. Returns dict with wav/svg/report paths."""
     image_path = str(image_path)
     output_dir = Path(output_dir)
@@ -327,22 +319,33 @@ def run_v22(image_path, duration_s, output_dir, progress_cb=None):
     spec     = _load_image_gray(image_path, N_FREQ_BINS, MAX_IMG_COLS)
     fft_data = _image_fft2(spec)
 
-    stem       = Path(image_path).stem
-    out_wav    = output_dir / f"{stem}_v22.wav"
-    out_svg    = output_dir / f"{stem}_v22.svg"
-    out_report = output_dir / f"{stem}_v22_report.txt"
+    prefix     = output_prefix or Path(image_path).stem
+    out_wav    = output_dir / f"{prefix}_v22.wav"
+    out_svg    = output_dir / f"{prefix}_v22.svg"
+    out_report = output_dir / f"{prefix}_v22_report.txt"
 
     n_total_frames = max(64, int(duration_s * SAMPLE_RATE / FRAME_HOP))
 
     _write_wav_streaming(out_wav, SAMPLE_RATE, duration_s, spec, fft_data,
                          n_total_frames=n_total_frames, progress_cb=progress_cb)
-
     _write_svg(out_svg, spec)
 
-    report_text = _generate_report(image_path, spec, fft_data, duration_s, out_wav)
-    out_report.write_text(report_text, encoding="utf-8")
+    # minimal inline report
+    lines = [
+        "=" * 60,
+        "LIVING IMAGE v22 — GARIAEV + SONIFY + LASER REPORT",
+        "=" * 60,
+        f"Input image   : {os.path.basename(image_path)}",
+        f"Output prefix : {prefix}",
+        f"Duration      : {duration_s:.1f} s",
+        f"Layers        : Gariaev IFFT + Sonify (blend={SONIFY_BLEND}) + He-Ne {LASER_NM}nm",
+        f"Generated     : {time.strftime('%Y-%m-%dT%H:%M:%S')}",
+        "=" * 60,
+    ]
+    out_report.write_text("\n".join(lines), encoding="utf-8")
 
-    return {"wav": str(out_wav), "svg": str(out_svg), "report": str(out_report)}
+    return {"wav": str(out_wav), "svg": str(out_svg), "report": str(out_report),
+            "prefix": prefix}
 
 
 # ──────────────────────────────────────────────
@@ -407,8 +410,9 @@ def export_output_zip(out_dir):
 
 class LivingImageApp(App):
     def build(self):
-        self.image_path = None
-        self.running = False
+        self.image_path    = None
+        self.running       = False
+        self.custom_prefix = None
 
         root = BoxLayout(orientation="vertical", padding=12, spacing=8)
 
@@ -420,7 +424,7 @@ class LivingImageApp(App):
         ))
 
         root.add_widget(Label(
-            text="[b]On-Device  •  Gariaev Spectrogram Engine[/b]",
+            text="[b]On-Device  •  Gariaev + Sonify + Laser[/b]",
             markup=True, font_size="13sp",
             size_hint_y=None, height=26,
             color=(0.4, 1, 0.6, 1),
@@ -464,7 +468,7 @@ class LivingImageApp(App):
             background_color=(0.65, 0.15, 0.75, 1),
             font_size="18sp", bold=True,
         )
-        self.run_btn.bind(on_press=self.run_encode)
+        self.run_btn.bind(on_press=self.show_naming_dialog)
         root.add_widget(self.run_btn)
 
         self.progress = ProgressBar(max=100, value=0, size_hint_y=None, height=14)
@@ -482,6 +486,126 @@ class LivingImageApp(App):
         root.add_widget(scroll)
 
         return root
+
+    # ── File naming dialog ─────────────────────
+
+    def show_naming_dialog(self, *args):
+        if self.running:
+            return
+        if not self.image_path or not os.path.exists(self.image_path):
+            self.log("[color=ff4444]Pick an image first.[/color]")
+            return
+
+        # default name = image stem + timestamp
+        stem    = Path(self.image_path).stem
+        ts      = time.strftime("%Y%m%d_%H%M%S")
+        default = f"{stem}_{ts}"
+
+        content = BoxLayout(orientation="vertical", padding=10, spacing=10)
+        content.add_widget(Label(
+            text="Name your file:",
+            size_hint_y=None, height=32,
+            color=(0.85, 0.85, 0.85, 1),
+        ))
+        name_input = TextInput(
+            text=default, multiline=False,
+            background_color=(0.1, 0.1, 0.2, 1),
+            foreground_color=(1, 1, 1, 1),
+            font_size="14sp",
+            size_hint_y=None, height=40,
+        )
+        content.add_widget(name_input)
+
+        btn_row = BoxLayout(size_hint_y=None, height=44, spacing=8)
+        cancel_btn = Button(text="Cancel", background_color=(0.3, 0.3, 0.3, 1))
+        start_btn  = Button(text="Start Encode", background_color=(0.65, 0.15, 0.75, 1))
+        btn_row.add_widget(cancel_btn)
+        btn_row.add_widget(start_btn)
+        content.add_widget(btn_row)
+
+        popup = Popup(
+            title="Name Output Files",
+            content=content,
+            size_hint=(0.9, 0.4),
+            background_color=(0.05, 0.05, 0.1, 1),
+        )
+
+        def on_cancel(*a):
+            popup.dismiss()
+
+        def on_start(*a):
+            raw = name_input.text.strip()
+            # sanitise: keep alphanumeric, dash, underscore
+            safe = "".join(c for c in raw if c.isalnum() or c in "-_") or default
+            self.custom_prefix = safe
+            popup.dismiss()
+            self.run_encode()
+
+        cancel_btn.bind(on_press=on_cancel)
+        start_btn.bind(on_press=on_start)
+        popup.open()
+
+    # ── Core encode flow ───────────────────────
+
+    def run_encode(self):
+        try:
+            duration = max(10, min(600, int(self.duration_input.text or "30")))
+        except Exception:
+            duration = 30
+
+        self.running = True
+        self.run_btn.disabled = True
+        self.set_progress(0)
+        prefix = self.custom_prefix or Path(self.image_path).stem
+        self.log("Starting v22 on-device encode (%ds) — prefix: [b]%s[/b]…" % (duration, prefix))
+
+        threading.Thread(
+            target=self._run_device,
+            args=(self.image_path, duration, prefix),
+            daemon=True,
+        ).start()
+
+    def _run_device(self, image_path, duration, prefix):
+        try:
+            out_dir = get_output_dir()
+            self.log("Output dir: %s" % out_dir)
+            self.set_progress(5)
+
+            result = run_v22(
+                image_path, duration, out_dir,
+                output_prefix=prefix,
+                progress_cb=self.set_progress,
+            )
+
+            self.set_progress(92)
+            zip_path, shared_ref = export_output_zip(out_dir)
+            self.set_progress(100)
+
+            wav_size = os.path.getsize(result["wav"]) if os.path.exists(result["wav"]) else 0
+            svg_size = os.path.getsize(result["svg"]) if os.path.exists(result["svg"]) else 0
+
+            self.log(
+                "[color=00ff99]Done![/color]\n"
+                "  Prefix: [b]%s[/b]\n"
+                "  WAV: %s  (%.1f MB)\n"
+                "  SVG: %s  (%.1f MB)\n"
+                "  ZIP: %s\n"
+                "  Shared: %s\n"
+                "[color=00ff99]Check Files app › Downloads › LivingImage_export[/color]"
+                % (
+                    result["prefix"],
+                    os.path.basename(result["wav"]), wav_size / 1e6,
+                    os.path.basename(result["svg"]), svg_size / 1e6,
+                    zip_path, shared_ref,
+                )
+            )
+
+        except Exception as e:
+            self.log("[color=ff4444]Error: %s\n%s[/color]" % (e, traceback.format_exc()))
+        finally:
+            self._done()
+
+    # ── Image picker ───────────────────────────
 
     def pick_image(self, *args):
         if platform == "android":
@@ -506,7 +630,6 @@ class LivingImageApp(App):
                 self.log("[color=ff4444]Picker error: %s[/color]" % e)
         else:
             from kivy.uix.filechooser import FileChooserIconView
-            from kivy.uix.popup import Popup
             chooser = FileChooserIconView(filters=["*.jpg", "*.jpeg", "*.png"])
             popup = Popup(title="Pick Image", content=chooser, size_hint=(0.9, 0.9))
 
@@ -535,64 +658,7 @@ class LivingImageApp(App):
         except Exception as e:
             self.log("[color=ff4444]Image load error: %s[/color]" % e)
 
-    def run_encode(self, *args):
-        if self.running:
-            return
-        if not self.image_path or not os.path.exists(self.image_path):
-            self.log("[color=ff4444]Pick an image first.[/color]")
-            return
-        try:
-            duration = max(10, min(600, int(self.duration_input.text or "30")))
-        except Exception:
-            duration = 30
-
-        self.running = True
-        self.run_btn.disabled = True
-        self.set_progress(0)
-        self.log("Starting v22 on-device encode (%ds)…" % duration)
-
-        threading.Thread(
-            target=self._run_device,
-            args=(self.image_path, duration),
-            daemon=True,
-        ).start()
-
-    def _run_device(self, image_path, duration):
-        try:
-            out_dir = get_output_dir()
-            self.log("Output dir: %s" % out_dir)
-            self.set_progress(5)
-
-            result = run_v22(
-                image_path, duration, out_dir,
-                progress_cb=self.set_progress,
-            )
-
-            self.set_progress(92)
-            zip_path, shared_ref = export_output_zip(out_dir)
-            self.set_progress(100)
-
-            wav_size = os.path.getsize(result["wav"]) if os.path.exists(result["wav"]) else 0
-            svg_size = os.path.getsize(result["svg"]) if os.path.exists(result["svg"]) else 0
-
-            self.log(
-                "[color=00ff99]Done![/color]\n"
-                "  WAV: %s  (%.1f MB)\n"
-                "  SVG: %s  (%.1f MB)\n"
-                "  ZIP: %s\n"
-                "  Shared: %s\n"
-                "[color=00ff99]Check Files app › Downloads › LivingImage_export[/color]"
-                % (
-                    os.path.basename(result["wav"]), wav_size / 1e6,
-                    os.path.basename(result["svg"]), svg_size / 1e6,
-                    zip_path, shared_ref,
-                )
-            )
-
-        except Exception as e:
-            self.log("[color=ff4444]Error: %s\n%s[/color]" % (e, traceback.format_exc()))
-        finally:
-            self._done()
+    # ── Kivy thread helpers ────────────────────
 
     @mainthread
     def log(self, msg):

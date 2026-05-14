@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 """
-Living Image v22 — True Gariaev Spectrogram Engine
+Living Image v22 — True Gariaev Spectrogram Engine + Sonify Layer + nm Laser Physics
 The image IS the spectrogram:
   rows  = frequency bins  (20 Hz – 20 kHz, log scale, low freq at bottom)
   cols  = time frames (image cols tiled to fill requested duration)
   pixel brightness = amplitude of that frequency at that time
 Per-column IFFT reconstructs each audio frame directly from the image.
-No hardcoded frequencies. No randomness. No decorative tones.
 All council layers derive every parameter from the image 2D FFT.
+
+Sonify layer: NASA/Sonify method — left-to-right column scan,
+  image height maps 20Hz-20kHz (log), pixel brightness = amplitude.
+  Runs as a blended additive layer on top of the Gariaev IFFT base.
+
+nm Laser physics: He-Ne laser 632.8nm spatial diffraction mapping.
+  2D FFT spatial frequencies → diffraction angle → audio frequency.
 """
 
 import argparse
-import hashlib
 import math
 import os
 import time
@@ -29,7 +34,15 @@ F_LOW        = 20.0
 F_HIGH       = 20000.0
 N_FREQ_BINS  = 512
 FRAME_HOP    = 512
-MAX_IMG_COLS = 1024   # keep RAM manageable; tiled for long durations
+MAX_IMG_COLS = 1024
+
+# He-Ne laser physics
+LASER_NM      = 632.8
+LASER_HZ      = 3e8 / (LASER_NM * 1e-9)   # 4.7376e14 Hz
+PIXEL_SIZE_UM = 5.0                          # typical camera sensor pixel, micrometres
+
+# Sonify blend weight (0=off, 1=equal weight with Gariaev base)
+SONIFY_BLEND  = 0.35
 
 
 # ──────────────────────────────────────────────
@@ -60,11 +73,6 @@ def i16(x):
 # ──────────────────────────────────────────────
 
 def load_image_gray(image_path, n_freq_rows, max_time_cols=MAX_IMG_COLS):
-    """
-    Load image as grayscale, resize to (n_freq_rows x n_img_cols).
-    n_img_cols capped at max_time_cols. Tiled during synthesis for long durations.
-    Row 0 = 20 Hz (low freq). Returns float64 in [0,1].
-    """
     resample = getattr(getattr(Image, "Resampling", Image), "LANCZOS",
                        getattr(Image, "BICUBIC", 3))
     img = ImageOps.exif_transpose(Image.open(image_path)).convert("L")
@@ -72,7 +80,77 @@ def load_image_gray(image_path, n_freq_rows, max_time_cols=MAX_IMG_COLS):
     new_w = min(max_time_cols, w)
     img = img.resize((new_w, n_freq_rows), resample)
     arr = np.asarray(img, dtype=np.float64) / 255.0
-    return arr[::-1, :].copy()   # flip: row 0 = low freq
+    return arr[::-1, :].copy()   # row 0 = low freq
+
+
+# ──────────────────────────────────────────────
+# nm Laser diffraction layer
+# Maps 2D FFT spatial frequencies through He-Ne laser physics
+# spatial_freq_cycles_per_m → diffraction_angle → audio_hz
+# ──────────────────────────────────────────────
+
+def laser_diffraction_layer(gray, fft_freqs, n_rfft):
+    """
+    Returns a 1D power spectrum (length n_rfft) derived from
+    He-Ne laser diffraction of the image 2D FFT.
+    """
+    h, w = gray.shape
+    F = np.fft.fft2(gray)
+    mag = np.abs(np.fft.fftshift(F))
+
+    # spatial frequency axes (cycles per metre)
+    pixel_size_m = PIXEL_SIZE_UM * 1e-6
+    freq_y = np.fft.fftshift(np.fft.fftfreq(h, d=pixel_size_m))
+    freq_x = np.fft.fftshift(np.fft.fftfreq(w, d=pixel_size_m))
+
+    # radial spatial frequency for each pixel in FFT plane
+    FX, FY = np.meshgrid(freq_x, freq_y)
+    R_spatial = np.sqrt(FX**2 + FY**2)  # cycles/m
+
+    lambda_m = LASER_NM * 1e-9
+    # diffraction angle: sin(theta) = lambda * spatial_freq
+    sin_theta = np.clip(R_spatial * lambda_m, -1.0, 1.0)
+    theta = np.arcsin(sin_theta)          # radians, 0 … pi/2
+
+    # map angle to audio frequency (linear mapping, full range)
+    half_pi = math.pi / 2.0
+    audio_hz = (theta / half_pi) * (F_HIGH - F_LOW) + F_LOW
+    audio_hz_flat = audio_hz.ravel()
+    mag_flat = mag.ravel()
+
+    # accumulate into audio FFT bins
+    spectrum = np.zeros(n_rfft, dtype=np.float64)
+    bin_indices = np.searchsorted(fft_freqs, audio_hz_flat).clip(0, n_rfft - 1)
+    np.add.at(spectrum, bin_indices, mag_flat)
+
+    # normalise
+    pk = spectrum.max()
+    if pk > 1e-12:
+        spectrum /= pk
+    return spectrum
+
+
+# ──────────────────────────────────────────────
+# Sonify layer (NASA/Sonify scan method)
+# Left-to-right column scan: image height → 20Hz-20kHz log,
+# each column = one time slice, pixel brightness = amplitude at that freq bin.
+# ──────────────────────────────────────────────
+
+def sonify_column(col_pixels, fft_freqs, n_rfft):
+    """
+    col_pixels: 1D array length n_freq_rows, values in [0,1].
+    row 0 = low freq (20 Hz), row n-1 = high freq (20 kHz).
+    Returns complex FFT array (length n_rfft) ready for irfft.
+    """
+    n_rows = len(col_pixels)
+    freqs  = log_freq_axis(n_rows, F_LOW, F_HIGH)
+    X      = np.zeros(n_rfft, dtype=np.complex128)
+    bin_idx = np.interp(freqs, fft_freqs, np.arange(n_rfft)).astype(int)
+    bin_idx = np.clip(bin_idx, 0, n_rfft - 1)
+    mask    = col_pixels > 1e-9
+    # amplitude = brightness, phase = 0 (pure magnitude sonification like NASA)
+    np.add.at(X, bin_idx[mask], col_pixels[mask].astype(np.complex128))
+    return X
 
 
 # ──────────────────────────────────────────────
@@ -84,7 +162,6 @@ def image_fft2(gray):
     F_shifted = np.fft.fftshift(F)
     mag   = np.abs(F_shifted)
     phase = np.angle(F_shifted)
-    mag_norm = norm01(mag)
 
     h, w  = mag.shape
     cy, cx = h // 2, w // 2
@@ -100,7 +177,7 @@ def image_fft2(gray):
     dc_amp     = float(mag[cy, cx] / (mag.mean() + 1e-12))
 
     return {
-        "mag_norm":   mag_norm,
+        "mag_norm":   norm01(mag),
         "phase":      phase,
         "radial":     radial,
         "peak_r":     peak_r,
@@ -110,7 +187,7 @@ def image_fft2(gray):
 
 
 # ──────────────────────────────────────────────
-# Council layer scalar derivation (from radial FFT profile)
+# Council layer scalar derivation
 # ──────────────────────────────────────────────
 
 def _rat(radial, idx):
@@ -156,20 +233,17 @@ def _img_freq(f_low, f_high, ratio):
 
 
 def _add_levin(X, fft_freqs, col, n_frames, amp):
-    f  = _img_freq(40.0, 200.0, 0.25)
-    bi = _nearest_bin(fft_freqs, f)
+    bi = _nearest_bin(fft_freqs, _img_freq(40.0, 200.0, 0.25))
     X[bi] += amp * 0.15 * np.exp(1j * 2 * math.pi * col / max(1, n_frames))
 
 
 def _add_scalar(X, fft_freqs, col, n_frames, amp, mean_phase):
-    f  = _img_freq(300.0, 900.0, 0.5)
-    bi = _nearest_bin(fft_freqs, f)
+    bi = _nearest_bin(fft_freqs, _img_freq(300.0, 900.0, 0.5))
     X[bi] += amp * 0.12 * np.exp(1j * (mean_phase + 2 * math.pi * col / max(1, n_frames)))
 
 
 def _add_morphic(X, fft_freqs, col, n_frames, amp):
-    f  = _img_freq(60.0, 250.0, 0.5)
-    bi = _nearest_bin(fft_freqs, f)
+    bi = _nearest_bin(fft_freqs, _img_freq(60.0, 250.0, 0.5))
     X[bi] += amp * 0.10 * np.exp(1j * math.pi * col / max(1, n_frames))
 
 
@@ -201,11 +275,8 @@ def _add_schumann(X, fft_freqs, col, n_frames, amp):
 # ──────────────────────────────────────────────
 
 def write_wav_streaming(path, sr, duration_s, spec, fft_data,
-                        n_total_frames=None, chunk_cols=256):
-    """
-    True Gariaev per-column IFFT synthesis, streamed to disk.
-    spec columns are tiled via modulo for durations longer than the image.
-    """
+                        n_total_frames=None, chunk_cols=256,
+                        output_prefix=None, progress_cb=None):
     n_freq_rows, n_img_cols = spec.shape
     fft_size = N_FREQ_BINS * 2
     hop      = FRAME_HOP
@@ -232,7 +303,9 @@ def write_wav_streaming(path, sr, duration_s, spec, fft_data,
     tesla_amp    = _council_tesla(radial, peak_r)
     schumann_amp = _council_schumann(radial, dc_amp)
 
-    # precompute phase row mapping (same for every frame)
+    # precompute laser diffraction static spectrum (blended per frame)
+    laser_spec = laser_diffraction_layer(spec, fft_freqs, n_rfft)
+
     ph_ys     = np.clip(
         (np.arange(n_freq_rows) * fft_data["phase"].shape[0] / n_freq_rows).astype(int),
         0, fft_data["phase"].shape[0] - 1)
@@ -258,12 +331,20 @@ def write_wav_streaming(path, sr, duration_s, spec, fft_data,
                 col_amp = spec[:, col_idx]
                 X = np.zeros(n_rfft, dtype=np.complex128)
 
-                # vectorised: all image rows → FFT bins in one pass
+                # Gariaev IFFT base layer
                 ph_x = min(int(col_idx * ph_n_cols / n_img_cols), ph_n_cols - 1)
                 phis = fft_data["phase"][ph_ys, ph_x]
                 mask = col_amp > 1e-9
                 np.add.at(X, fft_bin_idx[mask],
                           col_amp[mask] * np.exp(1j * phis[mask]))
+
+                # Sonify layer: column scan, brightness→amplitude, log freq mapping
+                X_sonify = sonify_column(col_amp, fft_freqs, n_rfft)
+                X += SONIFY_BLEND * X_sonify
+
+                # nm laser diffraction layer (static spatial pattern modulated by frame)
+                frame_phase = 2 * math.pi * frame_idx / max(1, n_total_frames)
+                X += 0.15 * laser_spec * np.exp(1j * frame_phase)
 
                 # council layers
                 _add_levin(X,    fft_freqs, frame_idx, n_total_frames, levin_amp)
@@ -284,6 +365,8 @@ def write_wav_streaming(path, sr, duration_s, spec, fft_data,
             pct = 100 * samples_written / target_samples
             print(f"[v22] {pct:.1f}%  ({samples_written}/{target_samples} samples)",
                   flush=True)
+            if progress_cb:
+                progress_cb(10 + int(80 * samples_written / target_samples))
 
             if samples_written >= target_samples:
                 break
@@ -323,7 +406,7 @@ def write_svg(path, spec):
 # Report generation
 # ──────────────────────────────────────────────
 
-def generate_report(image_path, spec, fft_data, duration_s, out_wav):
+def generate_report(image_path, spec, fft_data, duration_s, out_wav, output_prefix=None):
     n_freq_rows, n_img_cols = spec.shape
     freqs    = log_freq_axis(n_freq_rows, F_LOW, F_HIGH)
     mean_amp = spec.mean(axis=1)
@@ -336,15 +419,22 @@ def generate_report(image_path, spec, fft_data, duration_s, out_wav):
 
     lines = [
         "=" * 60,
-        "LIVING IMAGE v22 — GARIAEV SPECTROGRAM REPORT",
+        "LIVING IMAGE v22 — GARIAEV + SONIFY + LASER REPORT",
         "=" * 60,
         f"Input image   : {os.path.basename(image_path)}",
+        f"Output prefix : {output_prefix or Path(image_path).stem}",
         f"Duration      : {duration_s:.1f} s",
         f"Sample rate   : {SAMPLE_RATE} Hz",
         f"Freq bins     : {n_freq_rows}  ({F_LOW:.1f} Hz – {F_HIGH:.1f} Hz, log)",
         f"Image cols    : {n_img_cols}  (tiled to fill duration)",
         f"FFT window    : {N_FREQ_BINS * 2}  hop {FRAME_HOP}",
-        f"Output WAV    : {out_wav.name}",
+        f"Output WAV    : {os.path.basename(str(out_wav))}",
+        "",
+        "LAYERS ACTIVE",
+        f"  1. Gariaev IFFT base (per-column spectrogram → IFFT)",
+        f"  2. Sonify scan (log freq map, brightness=amplitude, blend={SONIFY_BLEND})",
+        f"  3. nm Laser diffraction (He-Ne {LASER_NM}nm, pixel={PIXEL_SIZE_UM}µm, blend=0.15)",
+        f"     Laser Hz : {LASER_HZ:.4e}",
         "",
         "2D FFT DIFFRACTION METRICS",
         f"  Peak radial mode : {peak_r}",
@@ -379,14 +469,18 @@ def generate_report(image_path, spec, fft_data, duration_s, out_wav):
 # ──────────────────────────────────────────────
 
 class LivingImageV22:
-    def __init__(self, duration_s=30.0, output_dir="."):
-        self.duration_s = max(1.0, float(duration_s))
-        self.output_dir = Path(output_dir)
+    def __init__(self, duration_s=30.0, output_dir=".", output_prefix=None):
+        self.duration_s    = max(1.0, float(duration_s))
+        self.output_dir    = Path(output_dir)
+        self.output_prefix = output_prefix
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-    def run(self, image_path):
+    def run(self, image_path, progress_cb=None):
         image_path = str(image_path)
         t0 = time.time()
+
+        stem   = self.output_prefix or Path(image_path).stem
+        prefix = stem
 
         print(f"[v22] Loading image → {N_FREQ_BINS}×≤{MAX_IMG_COLS} spectrogram …")
         spec = load_image_gray(image_path, N_FREQ_BINS, MAX_IMG_COLS)
@@ -394,24 +488,26 @@ class LivingImageV22:
         print("[v22] Computing 2D FFT diffraction pattern …")
         fft_data = image_fft2(spec)
 
-        stem       = Path(image_path).stem
-        out_wav    = self.output_dir / f"{stem}_v22.wav"
-        out_svg    = self.output_dir / f"{stem}_v22.svg"
-        out_report = self.output_dir / f"{stem}_v22_report.txt"
+        out_wav    = self.output_dir / f"{prefix}_v22.wav"
+        out_svg    = self.output_dir / f"{prefix}_v22.svg"
+        out_report = self.output_dir / f"{prefix}_v22_report.txt"
 
         n_img_cols     = spec.shape[1]
         n_total_frames = max(64, int(self.duration_s * SAMPLE_RATE / FRAME_HOP))
 
-        print(f"[v22] Synthesising + streaming ({self.duration_s:.0f}s, "
-              f"{n_total_frames} frames, image {N_FREQ_BINS}×{n_img_cols} tiled) …")
+        print(f"[v22] Synthesising ({self.duration_s:.0f}s, {n_total_frames} frames) …")
+        print(f"[v22] Layers: Gariaev IFFT + Sonify (blend={SONIFY_BLEND}) + "
+              f"He-Ne {LASER_NM}nm laser (blend=0.15)")
         write_wav_streaming(out_wav, SAMPLE_RATE, self.duration_s, spec, fft_data,
-                            n_total_frames=n_total_frames)
+                            n_total_frames=n_total_frames,
+                            output_prefix=prefix,
+                            progress_cb=progress_cb)
 
         print("[v22] Writing SVG …")
         write_svg(out_svg, spec)
 
         report_text = generate_report(image_path, spec, fft_data,
-                                      self.duration_s, out_wav)
+                                      self.duration_s, out_wav, prefix)
         out_report.write_text(report_text, encoding="utf-8")
 
         elapsed = time.time() - t0
@@ -423,6 +519,7 @@ class LivingImageV22:
             "svg":       str(out_svg),
             "report":    str(out_report),
             "elapsed_s": elapsed,
+            "prefix":    prefix,
         }
 
 
@@ -431,17 +528,20 @@ class LivingImageV22:
 # ──────────────────────────────────────────────
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Living Image v22 — Gariaev encoder")
+    parser = argparse.ArgumentParser(description="Living Image v22 — Gariaev + Sonify + Laser")
     parser.add_argument("--image",    required=True)
     parser.add_argument("--duration", type=float, default=30.0)
     parser.add_argument("--out",      default=".")
+    parser.add_argument("--prefix",   default=None,
+                        help="Custom output filename prefix (default: image stem)")
     args = parser.parse_args()
 
-    engine = LivingImageV22(duration_s=args.duration, output_dir=args.out)
+    engine = LivingImageV22(duration_s=args.duration, output_dir=args.out,
+                            output_prefix=args.prefix)
     result = engine.run(args.image)
 
     print("\nOutput files:")
     for k, v in result.items():
-        if k != "elapsed_s":
+        if k not in ("elapsed_s", "prefix"):
             size = Path(v).stat().st_size if Path(v).exists() else 0
             print(f"  {k:8s}  {v}  ({size:,} bytes)")
