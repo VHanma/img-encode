@@ -42,9 +42,9 @@ jobs:
           path: |
             ~/.buildozer
             .buildozer
-          key: buildozer-${{ runner.os }}-v26-${{ hashFiles('buildozer.spec', 'main.py', 'v22_living_image.py') }}
+          key: buildozer-${{ runner.os }}-v27-${{ hashFiles('buildozer.spec', 'main.py', 'v22_living_image.py') }}
           restore-keys: |
-            buildozer-${{ runner.os }}-v26-
+            buildozer-${{ runner.os }}-v27-
             buildozer-${{ runner.os }}-
 
       - name: Install Python dependencies
@@ -73,11 +73,11 @@ jobs:
                   return pat.sub(line, text)
               return text.rstrip() + "\n" + line + "\n"
 
-          s = set_kv(s, "requirements", "python3==3.11.5,hostpython3==3.11.5,kivy==2.3.0,pillow==9.5.0,numpy,requests,androidstorage4kivy")
+          s = set_kv(s, "requirements", "python3==3.11.5,hostpython3==3.11.5,kivy==2.2.1,pillow==9.5.0,numpy,requests,androidstorage4kivy")
           s = set_kv(s, "android.api", "33")
           s = set_kv(s, "android.minapi", "24")
           s = set_kv(s, "android.ndk_api", "24")
-          s = set_kv(s, "android.ndk", "25c")
+          s = set_kv(s, "android.ndk", "26b")
           s = set_kv(s, "android.archs", "arm64-v8a")
           s = set_kv(s, "android.permissions", "READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,INTERNET")
           s = set_kv(s, "source.exclude_dirs", ".git,.github,.buildozer,bin,build,dist,v1-python,v2-js,v3,p4a-stable,encoder_android_output,encoder_android_output_v6,__pycache__")
