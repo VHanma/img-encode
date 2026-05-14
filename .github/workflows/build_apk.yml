@@ -42,9 +42,9 @@ jobs:
           path: |
             ~/.buildozer
             .buildozer
-          key: buildozer-${{ runner.os }}-v24-${{ hashFiles('buildozer.spec', 'main.py', 'v22_living_image.py') }}
+          key: buildozer-${{ runner.os }}-v25-${{ hashFiles('buildozer.spec', 'main.py', 'v22_living_image.py') }}
           restore-keys: |
-            buildozer-${{ runner.os }}-v24-
+            buildozer-${{ runner.os }}-v25-
             buildozer-${{ runner.os }}-
 
       - name: Install Python dependencies
@@ -73,7 +73,7 @@ jobs:
                   return pat.sub(line, text)
               return text.rstrip() + "\n" + line + "\n"
 
-          s = set_kv(s, "requirements", "python3==3.11.5,hostpython3==3.11.5,kivy==2.3.0,pillow==9.5.0,numpy,requests,androidstorage4kivy")
+          s = set_kv(s, "requirements", "python3==3.11.5,hostpython3==3.11.5,kivy==2.3.0,pillow==9.5.0,numpy==1.26.4,requests,androidstorage4kivy")
           s = set_kv(s, "android.api", "33")
           s = set_kv(s, "android.minapi", "24")
           s = set_kv(s, "android.ndk_api", "24")
