@@ -42,9 +42,9 @@ jobs:
           path: |
             ~/.buildozer
             .buildozer
-          key: buildozer-${{ runner.os }}-v22-${{ hashFiles('buildozer.spec', 'main.py', 'v22_living_image.py') }}
+          key: buildozer-${{ runner.os }}-v23-${{ hashFiles('buildozer.spec', 'main.py', 'v22_living_image.py') }}
           restore-keys: |
-            buildozer-${{ runner.os }}-v22-
+            buildozer-${{ runner.os }}-v23-
             buildozer-${{ runner.os }}-
 
       - name: Install Python dependencies
