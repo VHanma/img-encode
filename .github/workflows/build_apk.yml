@@ -23,10 +23,10 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -42,35 +42,38 @@ jobs:
             build-essential libffi-dev libssl-dev \
             python3-dev autoconf libtool pkg-config \
             zlib1g-dev libncurses5-dev libncursesw5-dev \
-            cmake libltdl-dev
+            cmake libltdl-dev automake autopoint gettext
 
-      - name: Install Buildozer
+      - name: Install stable Buildozer toolchain
         run: |
-          python -m pip install --upgrade pip wheel setuptools
-          python -m pip install "Cython==0.29.36"
-          python -m pip install --upgrade buildozer virtualenv
+          python -m pip install --upgrade pip wheel "setuptools<70"
+          python -m pip install "Cython==0.29.34"
+          python -m pip install "buildozer==1.5.0" virtualenv
 
-      - name: Show clean files
+      - name: Clean old build cache
         run: |
-          echo "=== main.py first lines ==="
-          sed -n '1,40p' main.py
-          echo "=== buildozer.spec ==="
-          cat buildozer.spec
+          rm -rf .buildozer
+          rm -rf bin
+          buildozer appclean || true
 
       - name: Build debug APK
         run: |
           export JAVA_HOME="$JAVA_HOME_17_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
           java -version
-          buildozer android clean || true
+          python --version
+          buildozer --version
+
+          set +e
           yes | buildozer -v android debug 2>&1 | tee build.log
-          exit "${PIPESTATUS[1]}"
+          STATUS="${PIPESTATUS[1]}"
+          set -e
+          exit "$STATUS"
 
       - name: Collect APK
         if: always()
         run: |
           mkdir -p artifact-apk
-          echo "=== APK SEARCH ===" | tee -a build.log
           find . -type f -iname "*.apk" | sort | tee apk-files.txt || true
 
           if [ ! -s apk-files.txt ]; then
@@ -80,8 +83,6 @@ jobs:
 
           RAW_APK="$(head -n 1 apk-files.txt)"
           cp "$RAW_APK" artifact-apk/DNA-Forge-Max-debug.apk
-
-          echo "APK copied:"
           ls -lh artifact-apk/
 
       - name: Upload APK
