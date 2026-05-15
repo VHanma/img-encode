@@ -47,20 +47,28 @@ public class MainActivity extends Activity {
 
     static final int SAMPLE_RATE = 44100;
 
+    // Gariaev audio-scaled carrier
     static final double F0 = 6400.0;
     static final double F1 = 7000.0;
+
+    // Safe streaming bit time
     static final double BIT_MS = 1.5;
 
+    // Reference wave identity markers
     static final double HE_NE_HZ = 6328.0;
-    static final double HE_NE_MS = 750.0;
+    static final double HE_NE_MS = 500.0;
 
+    // Reference lattice
     static final double AURA_HZ = 528.0;
-    static final double AURA_AMP = 0.055;
-
     static final double SCHUMANN_HZ = 7.83;
+    static final double REFERENCE_HE_NE_AMP = 0.018;
+    static final double REFERENCE_528_AMP = 0.028;
+    static final double REFERENCE_40_AMP = 0.010;
+
     static final double GATE_DEPTH = 0.35;
 
-    static final int MAX_DIM = 16;
+    // Safe size. Streaming prevents crash, but this keeps files manageable.
+    static final int MAX_DIM = 24;
 
     static final String MEANING_PHRASE =
             "restore coherence copy this pattern stabilize this geometry resonate with this template";
@@ -75,14 +83,14 @@ public class MainActivity extends Activity {
         root.setBackgroundColor(0xff070714);
 
         TextView title = new TextView(this);
-        title.setText("DNA Forge Max v8 Safe\nLiving Wavecode Capsule");
+        title.setText("DNA Forge Max v9\nLiving Capsule + Reference Wave Lock");
         title.setTextColor(0xff00e5ff);
         title.setTextSize(21);
         title.setGravity(Gravity.CENTER);
         root.addView(title);
 
         pickButton = new Button(this);
-        pickButton.setText("PICK IMAGE → MAKE LIVING WAVECODE");
+        pickButton.setText("PICK IMAGE → MAKE v9 REFERENCE-LOCK WAV");
         root.addView(pickButton);
 
         playButton = new Button(this);
@@ -104,8 +112,10 @@ public class MainActivity extends Activity {
         log.setTextColor(0xffb8ffb8);
         log.setTextSize(13);
         log.setText(
-                "Ready.\n" +
-                "v8 SAFE MODE: all layers kept, but audio is shorter so Android will not kill the app.\n\n"
+                "Ready.\n\n" +
+                "v9 combines v8 Living Wavecode Capsule with Reference Wave Lock.\n" +
+                "This version streams audio directly to file so Android does not kill the app.\n\n" +
+                "Core secret: the image is not just data. It is a controlled deformation of a stable reference wave.\n\n"
         );
         scroll.addView(log);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -144,21 +154,36 @@ public class MainActivity extends Activity {
 
                     InputStream in = getContentResolver().openInputStream(uri);
                     Bitmap bmp = BitmapFactory.decodeStream(in);
+                    if (in != null) in.close();
 
                     if (bmp == null) {
                         say("Could not decode image.");
                         return;
                     }
 
-                    String base = "DNA_Forge_Max_v8_" + System.currentTimeMillis();
+                    say("Building v9 living capsule...");
+                    Capsule capsule = buildCapsule(bmp);
 
-                    EncodeResult resultObj = encodeBitmap(bmp);
+                    int totalFrames = calculateTotalFrames(capsule.capsuleBytes.length, capsule.meaningDna);
 
-                    say("Saving stereo WAV to public Music folder...");
-                    lastWavUri = saveWavToMusic(base + ".wav", resultObj.left, resultObj.right);
+                    say("Estimated seconds: " + r(totalFrames / (double) SAMPLE_RATE));
+                    say("Streaming stereo WAV directly to Music folder...");
+                    say("No giant RAM buffer. No cutoff.");
 
-                    say("Saving capsule manifest to public Downloads folder...");
-                    lastManifestUri = saveTextToDownloads(base + "_capsule_manifest.json", resultObj.manifest);
+                    String base = "DNA_Forge_Max_v9_" + System.currentTimeMillis();
+
+                    lastWavUri = saveWavToMusic(
+                            base + ".wav",
+                            capsule.capsuleBytes,
+                            capsule.meaningDna,
+                            totalFrames
+                    );
+
+                    say("Saving capsule manifest...");
+                    lastManifestUri = saveTextToDownloads(
+                            base + "_reference_wave_capsule_manifest.json",
+                            capsule.manifest
+                    );
 
                     say("");
                     say("DONE.");
@@ -167,10 +192,9 @@ public class MainActivity extends Activity {
                     say("Music/DNA_FORGE_MAX/" + base + ".wav");
                     say("");
                     say("Manifest:");
-                    say("Downloads/DNA_FORGE_MAX/" + base + "_capsule_manifest.json");
+                    say("Downloads/DNA_FORGE_MAX/" + base + "_reference_wave_capsule_manifest.json");
                     say("");
-                    say("Tap PLAY LAST WAV to hear it.");
-                    say("Tap SHARE LAST WAV to export it.");
+                    say("Tap PLAY LAST WAV or SHARE LAST WAV.");
 
                     runOnUiThread(() -> {
                         playButton.setEnabled(true);
@@ -217,7 +241,7 @@ public class MainActivity extends Activity {
             send.setType("audio/wav");
             send.putExtra(Intent.EXTRA_STREAM, lastWavUri);
             send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            startActivity(Intent.createChooser(send, "Share DNA Forge v8 WAV"));
+            startActivity(Intent.createChooser(send, "Share DNA Forge v9 WAV"));
         } catch (Exception e) {
             say("Could not share WAV.");
         }
@@ -228,7 +252,7 @@ public class MainActivity extends Activity {
 
         if (lightPulseOn) {
             say("Light pulse preview ON.");
-            say("This is visible red / He-Ne proxy only. Phone screen is not true infrared.");
+            say("Visible red / He-Ne proxy only. Phone screen is not true infrared.");
             runLightPulse();
         } else {
             root.setBackgroundColor(0xff070714);
@@ -240,7 +264,6 @@ public class MainActivity extends Activity {
         if (!lightPulseOn) return;
 
         lightTick++;
-
         int phase = lightTick % 9;
 
         if (phase == 2 || phase == 5 || phase == 8) {
@@ -254,15 +277,17 @@ public class MainActivity extends Activity {
         handler.postDelayed(this::runLightPulse, 111);
     }
 
-    static class EncodeResult {
-        double[] left;
-        double[] right;
+    static class Capsule {
+        byte[] capsuleBytes;
         String manifest;
+        String meaningDna;
+        Geometry geometry;
 
-        EncodeResult(double[] left, double[] right, String manifest) {
-            this.left = left;
-            this.right = right;
+        Capsule(byte[] capsuleBytes, String manifest, String meaningDna, Geometry geometry) {
+            this.capsuleBytes = capsuleBytes;
             this.manifest = manifest;
+            this.meaningDna = meaningDna;
+            this.geometry = geometry;
         }
     }
 
@@ -280,8 +305,7 @@ public class MainActivity extends Activity {
         long compressedCrc;
     }
 
-    EncodeResult encodeBitmap(Bitmap original) throws Exception {
-        say("Shrinking image...");
+    Capsule buildCapsule(Bitmap original) throws Exception {
         Bitmap bmp = shrink(original);
 
         say("Extracting geometry soul...");
@@ -290,24 +314,20 @@ public class MainActivity extends Activity {
 
         Geometry geo = extractGeometry(bmp, rgba, compressed);
 
-        say("Converting meaning phrase to symbolic DNA...");
+        say("Encoding meaning phrase as symbolic DNA...");
         String meaningDna = phraseToDna(MEANING_PHRASE);
 
-        String preManifest = buildManifest(geo, compressed.length, meaningDna, false);
+        String embeddedManifest = buildManifest(geo, compressed.length, meaningDna, 0, false);
+        byte[] metaBytes = embeddedManifest.getBytes(StandardCharsets.UTF_8);
 
-        byte[] metaBytes = preManifest.getBytes(StandardCharsets.UTF_8);
+        CRC32 payloadCrcObj = new CRC32();
+        payloadCrcObj.update(compressed);
+        long payloadCrc = payloadCrcObj.getValue();
 
-        CRC32 crc = new CRC32();
-        crc.update(compressed);
-        long payloadCrc = crc.getValue();
+        ByteArrayOutputStream coreOut = new ByteArrayOutputStream();
+        DataOutputStream dos = new DataOutputStream(coreOut);
 
-        say("Building living capsule packet...");
-
-        ByteArrayOutputStream packetOut = new ByteArrayOutputStream();
-        DataOutputStream dos = new DataOutputStream(packetOut);
-
-        // Main capsule header.
-        dos.writeBytes("DFMAXV8");
+        dos.writeBytes("DFMAXV9");
         dos.writeInt(geo.width);
         dos.writeInt(geo.height);
         dos.writeByte(4);
@@ -316,61 +336,50 @@ public class MainActivity extends Activity {
         dos.writeShort(metaBytes.length);
         dos.write(metaBytes);
         dos.write(compressed);
+        dos.flush();
 
-        byte[] corePacket = packetOut.toByteArray();
+        byte[] corePacket = coreOut.toByteArray();
 
-        // Redundancy / error survival:
-        // Repeat critical header and add reverse mirror hash.
-        CRC32 reverseCrc = new CRC32();
-        byte[] reversedCore = reverse(corePacket);
-        reverseCrc.update(reversedCore);
+        CRC32 reverseCrcObj = new CRC32();
+        reverseCrcObj.update(reverse(corePacket));
+        long reverseCrc = reverseCrcObj.getValue();
 
         ByteArrayOutputStream capsuleOut = new ByteArrayOutputStream();
         DataOutputStream cds = new DataOutputStream(capsuleOut);
 
-        cds.writeBytes("CAPSULE8");
+        cds.writeBytes("CAPSULE9");
         cds.writeInt(corePacket.length);
         cds.writeInt((int) payloadCrc);
-        cds.writeInt((int) reverseCrc.getValue());
+        cds.writeInt((int) reverseCrc);
 
-        // Header triple.
-        cds.write(corePacket, 0, Math.min(128, corePacket.length));
-        cds.write(corePacket, 0, Math.min(128, corePacket.length));
-        cds.write(corePacket, 0, Math.min(128, corePacket.length));
+        int headerChunk = Math.min(128, corePacket.length);
 
-        // Main payload.
+        // Triple header repetition for survival.
+        cds.write(corePacket, 0, headerChunk);
+        cds.write(corePacket, 0, headerChunk);
+        cds.write(corePacket, 0, headerChunk);
+
+        // Main object packet.
         cds.write(corePacket);
         cds.flush();
 
-        byte[] capsule = capsuleOut.toByteArray();
+        byte[] capsuleBytes = capsuleOut.toByteArray();
 
-        String manifest = buildManifest(geo, capsule.length, meaningDna, true);
+        String finalManifest = buildManifest(
+                geo,
+                compressed.length,
+                meaningDna,
+                capsuleBytes.length,
+                true
+        );
 
-        say("Capsule bytes: " + capsule.length);
-        say("Generating stereo living wavecode...");
-        say("Left = forward packet.");
-        say("Right = reverse / phase-conjugate mirror packet.");
+        say("Capsule bytes: " + capsuleBytes.length);
+        say("Reference wave lock ready.");
 
-        StereoWave stereo = makeLivingWavecode(capsule, meaningDna);
-
-        say("Seconds: " + Math.round(stereo.left.length * 10.0 / SAMPLE_RATE) / 10.0);
-
-        return new EncodeResult(stereo.left, stereo.right, manifest);
+        return new Capsule(capsuleBytes, finalManifest, meaningDna, geo);
     }
 
-    static class StereoWave {
-        double[] left;
-        double[] right;
-
-        StereoWave(double[] left, double[] right) {
-            this.left = left;
-            this.right = right;
-        }
-    }
-
-    Uri saveWavToMusic(String displayName, double[] left, double[] right) throws Exception {
-        byte[] wavBytes = buildStereoWavBytes(left, right);
-
+    Uri saveWavToMusic(String displayName, byte[] capsuleBytes, String meaningDna, int totalFrames) throws Exception {
         ContentResolver resolver = getContentResolver();
 
         ContentValues values = new ContentValues();
@@ -389,7 +398,12 @@ public class MainActivity extends Activity {
         }
 
         OutputStream out = resolver.openOutputStream(uri);
-        out.write(wavBytes);
+        if (out == null) {
+            throw new Exception("Could not open WAV output stream.");
+        }
+
+        writeLivingReferenceLockedWav(out, capsuleBytes, meaningDna, totalFrames);
+
         out.flush();
         out.close();
 
@@ -403,34 +417,38 @@ public class MainActivity extends Activity {
     }
 
     Uri saveTextToDownloads(String displayName, String text) throws Exception {
-        ContentResolver resolver = getContentResolver();
-
-        if (Build.VERSION.SDK_INT >= 29) {
-            ContentValues values = new ContentValues();
-            values.put(MediaStore.Downloads.DISPLAY_NAME, displayName);
-            values.put(MediaStore.Downloads.MIME_TYPE, "application/json");
-            values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/DNA_FORGE_MAX");
-            values.put(MediaStore.Downloads.IS_PENDING, 1);
-
-            Uri uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
-
-            if (uri == null) {
-                throw new Exception("Could not create manifest in Downloads.");
-            }
-
-            OutputStream out = resolver.openOutputStream(uri);
-            out.write(text.getBytes(StandardCharsets.UTF_8));
-            out.flush();
-            out.close();
-
-            ContentValues done = new ContentValues();
-            done.put(MediaStore.Downloads.IS_PENDING, 0);
-            resolver.update(uri, done, null, null);
-
-            return uri;
+        if (Build.VERSION.SDK_INT < 29) {
+            return null;
         }
 
-        return null;
+        ContentResolver resolver = getContentResolver();
+
+        ContentValues values = new ContentValues();
+        values.put(MediaStore.Downloads.DISPLAY_NAME, displayName);
+        values.put(MediaStore.Downloads.MIME_TYPE, "application/json");
+        values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/DNA_FORGE_MAX");
+        values.put(MediaStore.Downloads.IS_PENDING, 1);
+
+        Uri uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+
+        if (uri == null) {
+            throw new Exception("Could not create manifest in Downloads.");
+        }
+
+        OutputStream out = resolver.openOutputStream(uri);
+        if (out == null) {
+            throw new Exception("Could not open manifest output stream.");
+        }
+
+        out.write(text.getBytes(StandardCharsets.UTF_8));
+        out.flush();
+        out.close();
+
+        ContentValues done = new ContentValues();
+        done.put(MediaStore.Downloads.IS_PENDING, 0);
+        resolver.update(uri, done, null, null);
+
+        return uri;
     }
 
     static Bitmap shrink(Bitmap src) {
@@ -530,6 +548,7 @@ public class MainActivity extends Activity {
                 int gm = (cm >> 8) & 0xff;
                 int bm = cm & 0xff;
                 double grayMirror = (rm + gm + bm) / 3.0;
+
                 mirrorError += Math.abs(gray - grayMirror);
             }
         }
@@ -571,83 +590,224 @@ public class MainActivity extends Activity {
         return dna.toString();
     }
 
-    static String buildManifest(Geometry g, int packetBytes, String meaningDna, boolean finalManifest) {
+    static String buildManifest(
+            Geometry g,
+            int compressedBytes,
+            String meaningDna,
+            int capsuleBytes,
+            boolean finalManifest
+    ) {
         return "{\n" +
-                "  \"name\":\"DNA Forge Max v8 - Living Wavecode Capsule\",\n" +
+                "  \"name\":\"DNA Forge Max v9 - Living Wavecode Capsule + Reference Wave Lock\",\n" +
                 "  \"final_manifest\":" + finalManifest + ",\n" +
                 "  \"safety\":\"No medical claims. Consent-based, non-invasive, low-power only. Phone screen is not true infrared.\",\n" +
                 "  \"image\":{\"width\":" + g.width + ",\"height\":" + g.height + "},\n" +
-                "  \"packet_bytes\":" + packetBytes + ",\n" +
-                "  \"sync_key\":{\"he_ne_hz\":6328,\"chirp_hz\":[6400,7000],\"gate_hz\":7.83},\n" +
-                "  \"audio_format\":{\"wav\":\"stereo 16-bit PCM\",\"left\":\"forward packet\",\"right\":\"reverse phase-conjugate mirror packet\"},\n" +
-                "  \"error_survival\":{\"crc32\":true,\"header_repetition\":3,\"reverse_packet_crc\":true,\"packet_redundancy\":\"basic\"},\n" +
+                "  \"compressed_payload_bytes\":" + compressedBytes + ",\n" +
+                "  \"capsule_bytes\":" + capsuleBytes + ",\n" +
+                "  \"core_insight\":\"The image is a controlled deformation of a stable reference wave. The receiver reconstructs meaning from reference, object, and mirror return.\",\n" +
+                "  \"reference_wave_lock\":{\"active\":true,\"continuous_reference_lattice\":[528,6328,40,7.83],\"mid_side_holography\":true},\n" +
+                "  \"audio_format\":{\"wav\":\"stereo 16-bit PCM\",\"left\":\"object wave / forward image packet\",\"right\":\"reference-locked mirror / phase-conjugate return\"},\n" +
+                "  \"sync_key\":{\"he_ne_hz\":6328,\"chirp_hz\":[6400,7000],\"gate_hz\":7.83,\"golden_mean_timing\":true},\n" +
+                "  \"error_survival\":{\"crc32\":true,\"triple_header\":true,\"reverse_crc\":true,\"stream_to_file\":true},\n" +
                 "  \"meaning_layer\":{\"phrase\":\"" + escape(MEANING_PHRASE) + "\",\"symbolic_dna\":\"" + meaningDna + "\"},\n" +
                 "  \"geometry_soul\":{\"brightness\":" + r(g.brightness) + ",\"red\":" + r(g.red) + ",\"green\":" + r(g.green) + ",\"blue\":" + r(g.blue) + ",\"edge_density\":" + r(g.edgeDensity) + ",\"symmetry\":" + r(g.symmetry) + ",\"fractal_compression_proxy\":" + r(g.fractalCompressionProxy) + "},\n" +
                 "  \"gariaev_layer\":{\"zero_hz\":6400,\"one_hz\":7000,\"he_ne_preamble_hz\":6328,\"original_carrier_hz\":[640000,700000]},\n" +
-                "  \"levin_layer\":\"bioelectric morphogenesis map metadata from brightness, edges, symmetry, and color balance\",\n" +
+                "  \"levin_layer\":\"morphogenetic bioelectric map from brightness, edges, color balance, and symmetry\",\n" +
                 "  \"rife_layer\":{\"open_sweep_hz\":[20,20000],\"close_sweep_hz\":[20000,20]},\n" +
-                "  \"tesla_layer\":{\"schumann_gate_hz\":7.83,\"pulse_rhythm\":\"3-6-9\"},\n" +
+                "  \"tesla_layer\":{\"schumann_gate_hz\":7.83,\"pulse_rhythm\":\"3-6-9\",\"standing_wave_reference\":true},\n" +
                 "  \"bearden_scalar_layer\":{\"infolded_potential_metadata\":true,\"phase_conjugate_mirror_channel\":true,\"coil_marker_hz\":384000},\n" +
                 "  \"infrared_layer\":{\"wavelengths_nm\":[632.8,660,850,940],\"mode\":\"metadata plus red-screen He-Ne proxy\"},\n" +
                 "  \"expanded_modules\":[\"donor-template chamber\",\"polarized He-Ne optical correlator\",\"MBER carrier\",\"scalar plasma longitudinal stage\",\"sound-language encoder\",\"water liquid-crystal memory\",\"biofield detector\",\"feedback loop\",\"target resonance lock\",\"control placebo channel\"],\n" +
-                "  \"capsule\":\"image plus holographic geometry plus meaning plus binary plus phase mirror plus Rife sweep plus Tesla gate plus IR profile\"\n" +
+                "  \"capsule\":\"reference wave plus object modulation plus mirror return plus meaning DNA plus geometry soul plus manifest\"\n" +
                 "}\n";
     }
 
-    static String escape(String s) {
-        return s.replace("\\", "\\\\").replace("\"", "\\\"");
+    static int calculateTotalFrames(int capsuleBytes, String dna) {
+        int total = 0;
+
+        total += frames(250);
+        total += frames(500);
+        total += frames(HE_NE_MS);
+        total += frames(300);
+        total += frames(300);
+        total += meaningFrames(dna);
+        total += capsuleBytes * 8 * bitFrames();
+        total += frames(500);
+        total += frames(250);
+
+        return total;
     }
 
-    static String r(double v) {
-        return String.format(Locale.US, "%.6f", v);
+    static int frames(double ms) {
+        return (int) (SAMPLE_RATE * ms / 1000.0);
     }
 
-    static StereoWave makeLivingWavecode(byte[] capsule, String meaningDna) {
-        java.util.ArrayList<Double> left = new java.util.ArrayList<>();
-        java.util.ArrayList<Double> right = new java.util.ArrayList<>();
-
-        // Opening silence.
-        addStereoSilence(left, right, 250);
-
-        // Rife open sweep 20 Hz → 20 kHz.
-        addStereoSweep(left, right, 20.0, 20000.0, 500.0, 0.18, false);
-
-        // Triple sync key:
-        // 6328 Hz He-Ne gate.
-        addStereoTone(left, right, HE_NE_HZ, HE_NE_MS, 0.42, 0.42, 0.0, Math.PI / 2.0);
-
-        // 6400→7000 Hz carrier lock chirp.
-        addStereoSweep(left, right, F0, F1, 350.0, 0.30, true);
-
-        // 7.83 Hz pulse window.
-        addSchumannPulseWindow(left, right, 350.0);
-
-        // Meaning phrase to DNA rhythm.
-        addMeaningDnaRhythm(left, right, meaningDna);
-
-        // Main stereo packet:
-        // left = forward capsule.
-        // right = reversed capsule.
-        byte[] reversed = reverse(capsule);
-        addPacketBits(left, capsule, false);
-        addPacketBits(right, reversed, true);
-
-        // Close field with reverse Rife sweep.
-        addStereoSweep(left, right, 20000.0, 20.0, 500.0, 0.18, false);
-
-        addStereoSilence(left, right, 250);
-
-        double[] l = toArray(left);
-        double[] r = toArray(right);
-
-        // Apply global 528 bed, 7.83 gate, 3/6/9 pulse.
-        applyGlobalLayers(l, r);
-
-        return new StereoWave(l, r);
+    static int bitFrames() {
+        return Math.max(60, frames(BIT_MS));
     }
 
-    static void addMeaningDnaRhythm(java.util.ArrayList<Double> left, java.util.ArrayList<Double> right, String dna) {
-        // Golden-ish living timing for the meaning layer.
+    static int meaningFrames(String dna) {
+        int max = Math.min(dna.length(), 240);
+        int total = 0;
+
+        for (int i = 0; i < max; i++) {
+            char c = dna.charAt(i);
+            double ms = (c == 'C' || c == 'T') ? 4.854 : 3.0;
+            total += frames(ms);
+            total += frames(2.0);
+        }
+
+        total += frames(60);
+
+        return total;
+    }
+
+    void writeLivingReferenceLockedWav(
+            OutputStream out,
+            byte[] capsule,
+            String meaningDna,
+            int totalFrames
+    ) throws Exception {
+        writeStereoWavHeader(out, totalFrames);
+
+        SampleWriter sw = new SampleWriter(out);
+
+        say("Writing Rife open sweep...");
+        streamStereoSilence(sw, 250);
+        streamStereoSweep(sw, 20.0, 20000.0, 500.0, 0.18, false);
+
+        say("Writing triple sync key...");
+        streamStereoTone(sw, HE_NE_HZ, HE_NE_MS, 0.38, 0.38, 0.0, Math.PI / 2.0);
+        streamStereoSweep(sw, F0, F1, 300.0, 0.30, true);
+        streamSchumannPulseWindow(sw, 300.0);
+
+        say("Writing symbolic DNA meaning rhythm...");
+        streamMeaningDnaRhythm(sw, meaningDna);
+
+        say("Writing object wave + mirror return...");
+        streamPacketBits(sw, capsule);
+
+        say("Writing Rife close sweep...");
+        streamStereoSweep(sw, 20000.0, 20.0, 500.0, 0.18, false);
+        streamStereoSilence(sw, 250);
+
+        if (sw.framesWritten != totalFrames) {
+            say("Frame note: expected " + totalFrames + " wrote " + sw.framesWritten);
+        }
+    }
+
+    static class SampleWriter {
+        OutputStream out;
+        int framesWritten = 0;
+
+        SampleWriter(OutputStream out) {
+            this.out = out;
+        }
+    }
+
+    static void writeReferenceLockedFrame(SampleWriter sw, double objectLeft, double objectRight) throws Exception {
+        double t = sw.framesWritten / (double) SAMPLE_RATE;
+
+        // Stable reference lattice. This exists through the whole file.
+        double reference =
+                Math.sin(2.0 * Math.PI * AURA_HZ * t) * REFERENCE_528_AMP +
+                Math.sin(2.0 * Math.PI * HE_NE_HZ * t) * REFERENCE_HE_NE_AMP +
+                Math.sin(2.0 * Math.PI * 40.0 * t) * REFERENCE_40_AMP;
+
+        double gateWave = (1.0 + Math.sin(2.0 * Math.PI * SCHUMANN_HZ * t)) / 2.0;
+        double gateEnv = 1.0 - GATE_DEPTH + GATE_DEPTH * gateWave;
+
+        double pulse = 1.0;
+        int beat = ((int) (t * 9.0)) % 9;
+        if (beat == 2 || beat == 5 || beat == 8) {
+            pulse = 1.08;
+        }
+
+        // Mid/side holographic stereo:
+        // reference is common mid field, object/mirror are side deformations.
+        double left = clamp(reference + objectLeft * gateEnv * pulse);
+        double right = clamp(reference + objectRight * gateEnv * pulse);
+
+        writeLE16(sw.out, (int) (left * 32767.0));
+        writeLE16(sw.out, (int) (right * 32767.0));
+
+        sw.framesWritten++;
+    }
+
+    static void streamStereoSilence(SampleWriter sw, double ms) throws Exception {
+        int n = frames(ms);
+
+        for (int i = 0; i < n; i++) {
+            writeReferenceLockedFrame(sw, 0.0, 0.0);
+        }
+    }
+
+    static void streamStereoTone(
+            SampleWriter sw,
+            double freq,
+            double ms,
+            double ampL,
+            double ampR,
+            double phaseL,
+            double phaseR
+    ) throws Exception {
+        int n = frames(ms);
+        int fade = Math.max(1, frames(5.0));
+
+        for (int i = 0; i < n; i++) {
+            double env = 1.0;
+            if (i < fade) env = i / (double) fade;
+            else if (i > n - fade) env = Math.max(0.0, (n - i) / (double) fade);
+
+            double t = i / (double) SAMPLE_RATE;
+            double l = Math.sin(2.0 * Math.PI * freq * t + phaseL) * ampL * env;
+            double r = Math.sin(2.0 * Math.PI * freq * t + phaseR) * ampR * env;
+
+            writeReferenceLockedFrame(sw, l, r);
+        }
+    }
+
+    static void streamStereoSweep(
+            SampleWriter sw,
+            double startHz,
+            double endHz,
+            double ms,
+            double amp,
+            boolean oppositePhase
+    ) throws Exception {
+        int n = frames(ms);
+
+        double phaseL = 0.0;
+        double phaseR = oppositePhase ? Math.PI : Math.PI / 2.0;
+
+        for (int i = 0; i < n; i++) {
+            double frac = i / Math.max(1.0, n - 1.0);
+            double freq = startHz + (endHz - startHz) * frac;
+            double step = 2.0 * Math.PI * freq / SAMPLE_RATE;
+
+            double l = Math.sin(phaseL) * amp;
+            double r = Math.sin(phaseR) * amp;
+
+            writeReferenceLockedFrame(sw, l, r);
+
+            phaseL = (phaseL + step) % (2.0 * Math.PI);
+            phaseR = (phaseR + step) % (2.0 * Math.PI);
+        }
+    }
+
+    static void streamSchumannPulseWindow(SampleWriter sw, double ms) throws Exception {
+        int n = frames(ms);
+
+        for (int i = 0; i < n; i++) {
+            double t = i / (double) SAMPLE_RATE;
+            double gate = (1.0 + Math.sin(2.0 * Math.PI * SCHUMANN_HZ * t)) / 2.0;
+            double carrier = Math.sin(2.0 * Math.PI * 528.0 * t) * 0.15 * gate;
+
+            writeReferenceLockedFrame(sw, carrier, -carrier);
+        }
+    }
+
+    static void streamMeaningDnaRhythm(SampleWriter sw, String dna) throws Exception {
         double shortMs = 3.0;
         double longMs = 4.854;
 
@@ -673,129 +833,69 @@ public class MainActivity extends Activity {
                 ms = longMs;
             }
 
-            addStereoTone(left, right, hz, ms, 0.30, 0.22, 0.0, Math.PI / 2.0);
-            addStereoSilence(left, right, 2.0);
+            streamStereoTone(sw, hz, ms, 0.26, 0.18, 0.0, Math.PI / 2.0);
+            streamStereoSilence(sw, 2.0);
         }
 
-        addStereoSilence(left, right, 60.0);
+        streamStereoSilence(sw, 60.0);
     }
 
-    static void addPacketBits(java.util.ArrayList<Double> target, byte[] data, boolean phaseMirror) {
-        int bitSamples = Math.max(80, (int) (SAMPLE_RATE * BIT_MS / 1000.0));
-        double phase = phaseMirror ? Math.PI / 2.0 : 0.0;
+    static void streamPacketBits(SampleWriter sw, byte[] data) throws Exception {
+        byte[] reversed = reverse(data);
 
-        for (byte b : data) {
-            for (int i = 7; i >= 0; i--) {
-                int bit = (b >> i) & 1;
-                double freq = bit == 1 ? F1 : F0;
-                double step = 2.0 * Math.PI * freq / SAMPLE_RATE;
+        int bitSamples = bitFrames();
+
+        double phaseL = 0.0;
+        double phaseR = Math.PI / 2.0;
+
+        for (int idx = 0; idx < data.length; idx++) {
+            int bL = data[idx] & 0xff;
+            int bR = reversed[idx] & 0xff;
+
+            for (int bitPos = 7; bitPos >= 0; bitPos--) {
+                int bitL = (bL >> bitPos) & 1;
+                int bitR = (bR >> bitPos) & 1;
+
+                double freqL = bitL == 1 ? F1 : F0;
+                double freqR = bitR == 1 ? F1 : F0;
+
+                double stepL = 2.0 * Math.PI * freqL / SAMPLE_RATE;
+                double stepR = 2.0 * Math.PI * freqR / SAMPLE_RATE;
 
                 for (int s = 0; s < bitSamples; s++) {
-                    target.add(Math.sin(phase) * 0.64);
-                    phase = (phase + step) % (2.0 * Math.PI);
+                    double l = Math.sin(phaseL) * 0.60;
+                    double r = Math.sin(phaseR) * 0.60;
+
+                    writeReferenceLockedFrame(sw, l, r);
+
+                    phaseL = (phaseL + stepL) % (2.0 * Math.PI);
+                    phaseR = (phaseR + stepR) % (2.0 * Math.PI);
                 }
             }
         }
     }
 
-    static void addStereoSilence(java.util.ArrayList<Double> l, java.util.ArrayList<Double> r, double ms) {
-        int n = (int) (SAMPLE_RATE * ms / 1000.0);
-        for (int i = 0; i < n; i++) {
-            l.add(0.0);
-            r.add(0.0);
-        }
-    }
+    static void writeStereoWavHeader(OutputStream out, int totalFrames) throws Exception {
+        int channels = 2;
+        int bytesPerSample = 2;
+        int dataSize = totalFrames * channels * bytesPerSample;
+        int totalSize = 36 + dataSize;
 
-    static void addStereoTone(
-            java.util.ArrayList<Double> l,
-            java.util.ArrayList<Double> r,
-            double freq,
-            double ms,
-            double ampL,
-            double ampR,
-            double phaseL,
-            double phaseR
-    ) {
-        int n = (int) (SAMPLE_RATE * ms / 1000.0);
-        int fade = Math.max(1, (int) (SAMPLE_RATE * 0.005));
+        writeAscii(out, "RIFF");
+        writeLE32(out, totalSize);
+        writeAscii(out, "WAVE");
 
-        for (int i = 0; i < n; i++) {
-            double env = 1.0;
-            if (i < fade) env = i / (double) fade;
-            else if (i > n - fade) env = Math.max(0.0, (n - i) / (double) fade);
+        writeAscii(out, "fmt ");
+        writeLE32(out, 16);
+        writeLE16(out, 1);
+        writeLE16(out, channels);
+        writeLE32(out, SAMPLE_RATE);
+        writeLE32(out, SAMPLE_RATE * channels * bytesPerSample);
+        writeLE16(out, channels * bytesPerSample);
+        writeLE16(out, 16);
 
-            double t = i / (double) SAMPLE_RATE;
-            l.add(Math.sin(2.0 * Math.PI * freq * t + phaseL) * ampL * env);
-            r.add(Math.sin(2.0 * Math.PI * freq * t + phaseR) * ampR * env);
-        }
-    }
-
-    static void addStereoSweep(
-            java.util.ArrayList<Double> l,
-            java.util.ArrayList<Double> r,
-            double startHz,
-            double endHz,
-            double ms,
-            double amp,
-            boolean oppositePhase
-    ) {
-        int n = (int) (SAMPLE_RATE * ms / 1000.0);
-        double phaseL = 0.0;
-        double phaseR = oppositePhase ? Math.PI : Math.PI / 2.0;
-
-        for (int i = 0; i < n; i++) {
-            double frac = i / Math.max(1.0, n - 1.0);
-            double freq = startHz + (endHz - startHz) * frac;
-            double step = 2.0 * Math.PI * freq / SAMPLE_RATE;
-
-            l.add(Math.sin(phaseL) * amp);
-            r.add(Math.sin(phaseR) * amp);
-
-            phaseL = (phaseL + step) % (2.0 * Math.PI);
-            phaseR = (phaseR + step) % (2.0 * Math.PI);
-        }
-    }
-
-    static void addSchumannPulseWindow(java.util.ArrayList<Double> l, java.util.ArrayList<Double> r, double ms) {
-        int n = (int) (SAMPLE_RATE * ms / 1000.0);
-
-        for (int i = 0; i < n; i++) {
-            double t = i / (double) SAMPLE_RATE;
-            double gate = (1.0 + Math.sin(2.0 * Math.PI * SCHUMANN_HZ * t)) / 2.0;
-            double carrier = Math.sin(2.0 * Math.PI * 528.0 * t) * 0.18 * gate;
-            l.add(carrier);
-            r.add(-carrier);
-        }
-    }
-
-    static void applyGlobalLayers(double[] l, double[] r) {
-        int n = Math.min(l.length, r.length);
-
-        for (int i = 0; i < n; i++) {
-            double t = i / (double) SAMPLE_RATE;
-
-            double aura = Math.sin(2.0 * Math.PI * AURA_HZ * t) * AURA_AMP;
-
-            double gateWave = (1.0 + Math.sin(2.0 * Math.PI * SCHUMANN_HZ * t)) / 2.0;
-            double gateEnv = 1.0 - GATE_DEPTH + GATE_DEPTH * gateWave;
-
-            double pulse = 1.0;
-            int beat = ((int) (t * 9.0)) % 9;
-            if (beat == 2 || beat == 5 || beat == 8) pulse = 1.08;
-
-            l[i] = clamp((l[i] * gateEnv * pulse) + aura);
-            r[i] = clamp((r[i] * gateEnv * pulse) - aura);
-        }
-    }
-
-    static double[] toArray(java.util.ArrayList<Double> list) {
-        double[] out = new double[list.size()];
-
-        for (int i = 0; i < list.size(); i++) {
-            out[i] = list.get(i);
-        }
-
-        return out;
+        writeAscii(out, "data");
+        writeLE32(out, dataSize);
     }
 
     static byte[] reverse(byte[] input) {
@@ -814,49 +914,24 @@ public class MainActivity extends Activity {
         return x;
     }
 
-    static byte[] buildStereoWavBytes(double[] left, double[] right) throws Exception {
-        int frames = Math.min(left.length, right.length);
-        int channels = 2;
-        int bytesPerSample = 2;
-        int dataSize = frames * channels * bytesPerSample;
-        int totalSize = 36 + dataSize;
-
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-
-        writeAscii(out, "RIFF");
-        writeLE32(out, totalSize);
-        writeAscii(out, "WAVE");
-
-        writeAscii(out, "fmt ");
-        writeLE32(out, 16);
-        writeLE16(out, 1);
-        writeLE16(out, channels);
-        writeLE32(out, SAMPLE_RATE);
-        writeLE32(out, SAMPLE_RATE * channels * bytesPerSample);
-        writeLE16(out, channels * bytesPerSample);
-        writeLE16(out, 16);
-
-        writeAscii(out, "data");
-        writeLE32(out, dataSize);
-
-        for (int i = 0; i < frames; i++) {
-            writeLE16(out, (int) (clamp(left[i]) * 32767.0));
-            writeLE16(out, (int) (clamp(right[i]) * 32767.0));
-        }
-
-        return out.toByteArray();
+    static String escape(String s) {
+        return s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
-    static void writeAscii(ByteArrayOutputStream out, String s) throws Exception {
+    static String r(double v) {
+        return String.format(Locale.US, "%.6f", v);
+    }
+
+    static void writeAscii(OutputStream out, String s) throws Exception {
         out.write(s.getBytes(StandardCharsets.US_ASCII));
     }
 
-    static void writeLE16(ByteArrayOutputStream out, int v) {
+    static void writeLE16(OutputStream out, int v) throws Exception {
         out.write(v & 0xff);
         out.write((v >> 8) & 0xff);
     }
 
-    static void writeLE32(ByteArrayOutputStream out, int v) {
+    static void writeLE32(OutputStream out, int v) throws Exception {
         out.write(v & 0xff);
         out.write((v >> 8) & 0xff);
         out.write((v >> 16) & 0xff);
