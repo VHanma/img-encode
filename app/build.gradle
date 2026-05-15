@@ -10,7 +10,7 @@ android {
         applicationId "org.vhanma.dnaforgemax"
         minSdk 24
         targetSdk 35
-        versionCode 8
-        versionName "8.0"
+        versionCode 9
+        versionName "8.1-safe"
     }
 }

@@ -49,7 +49,7 @@ public class MainActivity extends Activity {
 
     static final double F0 = 6400.0;
     static final double F1 = 7000.0;
-    static final double BIT_MS = 3.0;
+    static final double BIT_MS = 1.5;
 
     static final double HE_NE_HZ = 6328.0;
     static final double HE_NE_MS = 750.0;
@@ -60,7 +60,7 @@ public class MainActivity extends Activity {
     static final double SCHUMANN_HZ = 7.83;
     static final double GATE_DEPTH = 0.35;
 
-    static final int MAX_DIM = 32;
+    static final int MAX_DIM = 16;
 
     static final String MEANING_PHRASE =
             "restore coherence copy this pattern stabilize this geometry resonate with this template";
@@ -75,7 +75,7 @@ public class MainActivity extends Activity {
         root.setBackgroundColor(0xff070714);
 
         TextView title = new TextView(this);
-        title.setText("DNA Forge Max v8\nLiving Wavecode Capsule");
+        title.setText("DNA Forge Max v8 Safe\nLiving Wavecode Capsule");
         title.setTextColor(0xff00e5ff);
         title.setTextSize(21);
         title.setGravity(Gravity.CENTER);
@@ -105,7 +105,7 @@ public class MainActivity extends Activity {
         log.setTextSize(13);
         log.setText(
                 "Ready.\n" +
-                "v8 adds stereo mirror channel, sync key, Rife sweep, symbolic DNA, geometry extraction, and living capsule manifest.\n\n"
+                "v8 SAFE MODE: all layers kept, but audio is shorter so Android will not kill the app.\n\n"
         );
         scroll.addView(log);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -610,17 +610,17 @@ public class MainActivity extends Activity {
         addStereoSilence(left, right, 250);
 
         // Rife open sweep 20 Hz → 20 kHz.
-        addStereoSweep(left, right, 20.0, 20000.0, 1200.0, 0.22, false);
+        addStereoSweep(left, right, 20.0, 20000.0, 500.0, 0.18, false);
 
         // Triple sync key:
         // 6328 Hz He-Ne gate.
         addStereoTone(left, right, HE_NE_HZ, HE_NE_MS, 0.42, 0.42, 0.0, Math.PI / 2.0);
 
         // 6400→7000 Hz carrier lock chirp.
-        addStereoSweep(left, right, F0, F1, 800.0, 0.35, true);
+        addStereoSweep(left, right, F0, F1, 350.0, 0.30, true);
 
         // 7.83 Hz pulse window.
-        addSchumannPulseWindow(left, right, 900.0);
+        addSchumannPulseWindow(left, right, 350.0);
 
         // Meaning phrase to DNA rhythm.
         addMeaningDnaRhythm(left, right, meaningDna);
@@ -633,7 +633,7 @@ public class MainActivity extends Activity {
         addPacketBits(right, reversed, true);
 
         // Close field with reverse Rife sweep.
-        addStereoSweep(left, right, 20000.0, 20.0, 1200.0, 0.22, false);
+        addStereoSweep(left, right, 20000.0, 20.0, 500.0, 0.18, false);
 
         addStereoSilence(left, right, 250);
 
@@ -651,7 +651,7 @@ public class MainActivity extends Activity {
         double shortMs = 3.0;
         double longMs = 4.854;
 
-        int max = Math.min(dna.length(), 720);
+        int max = Math.min(dna.length(), 240);
 
         for (int i = 0; i < max; i++) {
             char c = dna.charAt(i);
