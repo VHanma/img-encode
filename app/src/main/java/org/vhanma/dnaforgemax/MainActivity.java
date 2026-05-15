@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.content.Intent;
 import android.content.ContentValues;
 import android.content.ContentResolver;
@@ -22,6 +24,7 @@ import java.io.DataOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.zip.CRC32;
 import java.util.zip.Deflater;
 
@@ -33,20 +36,34 @@ public class MainActivity extends Activity {
     Button pickButton;
     Button playButton;
     Button shareButton;
-    Button irButton;
+    Button lightButton;
 
     Uri lastWavUri = null;
     Uri lastManifestUri = null;
-    boolean redMode = false;
+
+    Handler handler = new Handler(Looper.getMainLooper());
+    boolean lightPulseOn = false;
+    int lightTick = 0;
 
     static final int SAMPLE_RATE = 44100;
+
     static final double F0 = 6400.0;
     static final double F1 = 7000.0;
     static final double BIT_MS = 3.0;
+
     static final double HE_NE_HZ = 6328.0;
+    static final double HE_NE_MS = 750.0;
+
     static final double AURA_HZ = 528.0;
+    static final double AURA_AMP = 0.055;
+
     static final double SCHUMANN_HZ = 7.83;
+    static final double GATE_DEPTH = 0.35;
+
     static final int MAX_DIM = 32;
+
+    static final String MEANING_PHRASE =
+            "restore coherence copy this pattern stabilize this geometry resonate with this template";
 
     @Override
     protected void onCreate(Bundle b) {
@@ -58,14 +75,14 @@ public class MainActivity extends Activity {
         root.setBackgroundColor(0xff070714);
 
         TextView title = new TextView(this);
-        title.setText("DNA Forge Max\nNative Android Wavecode Encoder");
+        title.setText("DNA Forge Max v8\nLiving Wavecode Capsule");
         title.setTextColor(0xff00e5ff);
-        title.setTextSize(20);
+        title.setTextSize(21);
         title.setGravity(Gravity.CENTER);
         root.addView(title);
 
         pickButton = new Button(this);
-        pickButton.setText("PICK IMAGE → MAKE WAVECODE WAV");
+        pickButton.setText("PICK IMAGE → MAKE LIVING WAVECODE");
         root.addView(pickButton);
 
         playButton = new Button(this);
@@ -78,15 +95,18 @@ public class MainActivity extends Activity {
         shareButton.setEnabled(false);
         root.addView(shareButton);
 
-        irButton = new Button(this);
-        irButton.setText("RED / IR SCREEN PROXY");
-        root.addView(irButton);
+        lightButton = new Button(this);
+        lightButton.setText("RED / HE-NE LIGHT PULSE PREVIEW");
+        root.addView(lightButton);
 
         ScrollView scroll = new ScrollView(this);
         log = new TextView(this);
         log.setTextColor(0xffb8ffb8);
         log.setTextSize(13);
-        log.setText("Ready.\nTap PICK IMAGE and choose an image.\n\n");
+        log.setText(
+                "Ready.\n" +
+                "v8 adds stereo mirror channel, sync key, Rife sweep, symbolic DNA, geometry extraction, and living capsule manifest.\n\n"
+        );
         scroll.addView(log);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
@@ -95,7 +115,7 @@ public class MainActivity extends Activity {
         pickButton.setOnClickListener(v -> openPicker());
         playButton.setOnClickListener(v -> playLast());
         shareButton.setOnClickListener(v -> shareLast());
-        irButton.setOnClickListener(v -> toggleRedProxy());
+        lightButton.setOnClickListener(v -> toggleLightPulse());
     }
 
     void openPicker() {
@@ -130,27 +150,27 @@ public class MainActivity extends Activity {
                         return;
                     }
 
-                    String base = "DNA_Forge_Max_" + System.currentTimeMillis();
+                    String base = "DNA_Forge_Max_v8_" + System.currentTimeMillis();
 
                     EncodeResult resultObj = encodeBitmap(bmp);
 
-                    say("Saving WAV to public Music folder...");
-                    lastWavUri = saveWavToMusic(base + ".wav", resultObj.samples);
+                    say("Saving stereo WAV to public Music folder...");
+                    lastWavUri = saveWavToMusic(base + ".wav", resultObj.left, resultObj.right);
 
-                    say("Saving manifest to public Downloads folder...");
-                    lastManifestUri = saveTextToDownloads(base + "_manifest.json", resultObj.manifest);
+                    say("Saving capsule manifest to public Downloads folder...");
+                    lastManifestUri = saveTextToDownloads(base + "_capsule_manifest.json", resultObj.manifest);
 
                     say("");
                     say("DONE.");
                     say("");
-                    say("WAV is now in:");
+                    say("WAV:");
                     say("Music/DNA_FORGE_MAX/" + base + ".wav");
                     say("");
-                    say("Manifest is now in:");
-                    say("Downloads/DNA_FORGE_MAX/" + base + "_manifest.json");
+                    say("Manifest:");
+                    say("Downloads/DNA_FORGE_MAX/" + base + "_capsule_manifest.json");
                     say("");
                     say("Tap PLAY LAST WAV to hear it.");
-                    say("Tap SHARE LAST WAV to send/export it.");
+                    say("Tap SHARE LAST WAV to export it.");
 
                     runOnUiThread(() -> {
                         playButton.setEnabled(true);
@@ -182,7 +202,7 @@ public class MainActivity extends Activity {
             startActivity(i);
         } catch (Exception e) {
             say("Could not open audio player.");
-            say("Use Files app → Music → DNA_FORGE_MAX.");
+            say("Use Files → Music → DNA_FORGE_MAX.");
         }
     }
 
@@ -197,76 +217,159 @@ public class MainActivity extends Activity {
             send.setType("audio/wav");
             send.putExtra(Intent.EXTRA_STREAM, lastWavUri);
             send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            startActivity(Intent.createChooser(send, "Share DNA Forge WAV"));
+            startActivity(Intent.createChooser(send, "Share DNA Forge v8 WAV"));
         } catch (Exception e) {
             say("Could not share WAV.");
         }
     }
 
-    void toggleRedProxy() {
-        redMode = !redMode;
+    void toggleLightPulse() {
+        lightPulseOn = !lightPulseOn;
 
-        if (redMode) {
-            root.setBackgroundColor(0xff330000);
-            say("RED / IR proxy ON.");
-            say("Note: this is visible red-screen proxy only. Phone screen is not true infrared.");
+        if (lightPulseOn) {
+            say("Light pulse preview ON.");
+            say("This is visible red / He-Ne proxy only. Phone screen is not true infrared.");
+            runLightPulse();
         } else {
             root.setBackgroundColor(0xff070714);
-            say("RED / IR proxy OFF.");
+            say("Light pulse preview OFF.");
         }
     }
 
+    void runLightPulse() {
+        if (!lightPulseOn) return;
+
+        lightTick++;
+
+        int phase = lightTick % 9;
+
+        if (phase == 2 || phase == 5 || phase == 8) {
+            root.setBackgroundColor(0xffff0000);
+        } else if (phase % 2 == 0) {
+            root.setBackgroundColor(0xff330000);
+        } else {
+            root.setBackgroundColor(0xff070714);
+        }
+
+        handler.postDelayed(this::runLightPulse, 111);
+    }
+
     static class EncodeResult {
-        double[] samples;
+        double[] left;
+        double[] right;
         String manifest;
 
-        EncodeResult(double[] samples, String manifest) {
-            this.samples = samples;
+        EncodeResult(double[] left, double[] right, String manifest) {
+            this.left = left;
+            this.right = right;
             this.manifest = manifest;
         }
+    }
+
+    static class Geometry {
+        int width;
+        int height;
+        double brightness;
+        double red;
+        double green;
+        double blue;
+        double edgeDensity;
+        double symmetry;
+        double fractalCompressionProxy;
+        long rawCrc;
+        long compressedCrc;
     }
 
     EncodeResult encodeBitmap(Bitmap original) throws Exception {
         say("Shrinking image...");
         Bitmap bmp = shrink(original);
 
+        say("Extracting geometry soul...");
         byte[] rgba = bitmapToRgba(bmp);
         byte[] compressed = deflate(rgba);
 
+        Geometry geo = extractGeometry(bmp, rgba, compressed);
+
+        say("Converting meaning phrase to symbolic DNA...");
+        String meaningDna = phraseToDna(MEANING_PHRASE);
+
+        String preManifest = buildManifest(geo, compressed.length, meaningDna, false);
+
+        byte[] metaBytes = preManifest.getBytes(StandardCharsets.UTF_8);
+
         CRC32 crc = new CRC32();
         crc.update(compressed);
+        long payloadCrc = crc.getValue();
 
-        String metadata = buildMetadata(bmp.getWidth(), bmp.getHeight(), rgba, compressed);
-        byte[] metaBytes = metadata.getBytes(StandardCharsets.UTF_8);
+        say("Building living capsule packet...");
 
         ByteArrayOutputStream packetOut = new ByteArrayOutputStream();
         DataOutputStream dos = new DataOutputStream(packetOut);
 
-        dos.writeBytes("DFMAXN1");
-        dos.writeInt(bmp.getWidth());
-        dos.writeInt(bmp.getHeight());
+        // Main capsule header.
+        dos.writeBytes("DFMAXV8");
+        dos.writeInt(geo.width);
+        dos.writeInt(geo.height);
         dos.writeByte(4);
         dos.writeInt(compressed.length);
-        dos.writeInt((int) crc.getValue());
+        dos.writeInt((int) payloadCrc);
         dos.writeShort(metaBytes.length);
         dos.write(metaBytes);
         dos.write(compressed);
-        dos.flush();
 
-        byte[] packet = packetOut.toByteArray();
+        byte[] corePacket = packetOut.toByteArray();
 
-        say("Packet bytes: " + packet.length);
-        say("Generating wavecode audio...");
+        // Redundancy / error survival:
+        // Repeat critical header and add reverse mirror hash.
+        CRC32 reverseCrc = new CRC32();
+        byte[] reversedCore = reverse(corePacket);
+        reverseCrc.update(reversedCore);
 
-        double[] samples = makeWavecode(packet);
+        ByteArrayOutputStream capsuleOut = new ByteArrayOutputStream();
+        DataOutputStream cds = new DataOutputStream(capsuleOut);
 
-        say("Seconds: " + Math.round(samples.length * 10.0 / SAMPLE_RATE) / 10.0);
+        cds.writeBytes("CAPSULE8");
+        cds.writeInt(corePacket.length);
+        cds.writeInt((int) payloadCrc);
+        cds.writeInt((int) reverseCrc.getValue());
 
-        return new EncodeResult(samples, metadata);
+        // Header triple.
+        cds.write(corePacket, 0, Math.min(128, corePacket.length));
+        cds.write(corePacket, 0, Math.min(128, corePacket.length));
+        cds.write(corePacket, 0, Math.min(128, corePacket.length));
+
+        // Main payload.
+        cds.write(corePacket);
+        cds.flush();
+
+        byte[] capsule = capsuleOut.toByteArray();
+
+        String manifest = buildManifest(geo, capsule.length, meaningDna, true);
+
+        say("Capsule bytes: " + capsule.length);
+        say("Generating stereo living wavecode...");
+        say("Left = forward packet.");
+        say("Right = reverse / phase-conjugate mirror packet.");
+
+        StereoWave stereo = makeLivingWavecode(capsule, meaningDna);
+
+        say("Seconds: " + Math.round(stereo.left.length * 10.0 / SAMPLE_RATE) / 10.0);
+
+        return new EncodeResult(stereo.left, stereo.right, manifest);
     }
 
-    Uri saveWavToMusic(String displayName, double[] samples) throws Exception {
-        byte[] wavBytes = buildWavBytes(samples);
+    static class StereoWave {
+        double[] left;
+        double[] right;
+
+        StereoWave(double[] left, double[] right) {
+            this.left = left;
+            this.right = right;
+        }
+    }
+
+    Uri saveWavToMusic(String displayName, double[] left, double[] right) throws Exception {
+        byte[] wavBytes = buildStereoWavBytes(left, right);
 
         ContentResolver resolver = getContentResolver();
 
@@ -376,87 +479,243 @@ public class MainActivity extends Activity {
         return out.toByteArray();
     }
 
-    String buildMetadata(int w, int h, byte[] raw, byte[] compressed) {
-        return "{\n" +
-                "  \"name\":\"DNA Forge Max Native Android\",\n" +
-                "  \"safety\":\"No medical claims. Consent-based, non-invasive, low-power only.\",\n" +
-                "  \"image\":{\"width\":" + w + ",\"height\":" + h + "},\n" +
-                "  \"dna_payload\":\"RGBA pixels compressed into binary packet\",\n" +
-                "  \"gariaev_layer\":{\"zero_hz\":6400,\"one_hz\":7000,\"he_ne_preamble_hz\":6328,\"original_carrier_hz\":[640000,700000]},\n" +
-                "  \"levin_layer\":\"bioelectric morphogenesis map metadata\",\n" +
-                "  \"rife_layer\":{\"sweep_hz\":[20,20000]},\n" +
-                "  \"tesla_layer\":{\"schumann_gate_hz\":7.83,\"pulse_rhythm\":\"3-6-9\"},\n" +
-                "  \"bearden_scalar_layer\":{\"coil_marker_hz\":384000,\"phase_conjugate_reverse_hash\":true},\n" +
-                "  \"infrared_layer\":{\"wavelengths_nm\":[632.8,660,850,940],\"note\":\"metadata plus red-screen proxy only\"},\n" +
-                "  \"expanded_modules\":[\"donor-template chamber\",\"polarized He-Ne optical correlator\",\"MBER carrier\",\"scalar plasma longitudinal stage\",\"sound-language encoder\",\"water liquid-crystal memory\",\"biofield detector\",\"feedback loop\",\"target resonance lock\",\"control placebo channel\"],\n" +
-                "  \"meaning_phrase\":\"restore coherence copy this pattern stabilize this geometry resonate with this template\"\n" +
-                "}\n";
-    }
+    static Geometry extractGeometry(Bitmap bmp, byte[] raw, byte[] compressed) {
+        Geometry g = new Geometry();
+        g.width = bmp.getWidth();
+        g.height = bmp.getHeight();
 
-    static double[] makeWavecode(byte[] packet) {
-        int bitSamples = Math.max(80, (int) (SAMPLE_RATE * BIT_MS / 1000.0));
-        java.util.ArrayList<Double> samples = new java.util.ArrayList<>();
+        int w = g.width;
+        int h = g.height;
+        int count = Math.max(1, w * h);
 
-        addSilence(samples, 300);
-        addTone(samples, HE_NE_HZ, 750, 0.45);
-        addSilence(samples, 50);
+        double brightness = 0;
+        double red = 0;
+        double green = 0;
+        double blue = 0;
+        double edge = 0;
+        double mirrorError = 0;
 
-        String phrase = "restore coherence copy this pattern stabilize this geometry resonate with this template";
-        byte[] phraseBytes = phrase.getBytes(StandardCharsets.UTF_8);
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int c = bmp.getPixel(x, y);
+                int r = (c >> 16) & 0xff;
+                int gg = (c >> 8) & 0xff;
+                int b = c & 0xff;
 
-        for (byte b : phraseBytes) {
-            for (int i = 7; i >= 0; i--) {
-                int bit = (b >> i) & 1;
-                addTone(samples, bit == 1 ? 528.0 : 396.0, bit == 1 ? 28.0 : 14.0, 0.28);
-                addSilence(samples, 6);
+                double gray = (r + gg + b) / 3.0;
+
+                brightness += gray;
+                red += r;
+                green += gg;
+                blue += b;
+
+                if (x + 1 < w) {
+                    int c2 = bmp.getPixel(x + 1, y);
+                    int r2 = (c2 >> 16) & 0xff;
+                    int g2 = (c2 >> 8) & 0xff;
+                    int b2 = c2 & 0xff;
+                    edge += Math.abs(gray - ((r2 + g2 + b2) / 3.0));
+                }
+
+                if (y + 1 < h) {
+                    int c3 = bmp.getPixel(x, y + 1);
+                    int r3 = (c3 >> 16) & 0xff;
+                    int g3 = (c3 >> 8) & 0xff;
+                    int b3 = c3 & 0xff;
+                    edge += Math.abs(gray - ((r3 + g3 + b3) / 3.0));
+                }
+
+                int cm = bmp.getPixel(w - 1 - x, y);
+                int rm = (cm >> 16) & 0xff;
+                int gm = (cm >> 8) & 0xff;
+                int bm = cm & 0xff;
+                double grayMirror = (rm + gm + bm) / 3.0;
+                mirrorError += Math.abs(gray - grayMirror);
             }
         }
 
-        addSilence(samples, 50);
+        g.brightness = brightness / (count * 255.0);
+        g.red = red / (count * 255.0);
+        g.green = green / (count * 255.0);
+        g.blue = blue / (count * 255.0);
+        g.edgeDensity = edge / Math.max(1.0, count * 255.0 * 2.0);
+        g.symmetry = 1.0 - (mirrorError / Math.max(1.0, count * 255.0));
+        g.fractalCompressionProxy = compressed.length / Math.max(1.0, raw.length);
 
-        double phase = 0.0;
+        CRC32 rawCrc = new CRC32();
+        rawCrc.update(raw);
+        g.rawCrc = rawCrc.getValue();
 
-        for (byte b : packet) {
+        CRC32 compCrc = new CRC32();
+        compCrc.update(compressed);
+        g.compressedCrc = compCrc.getValue();
+
+        return g;
+    }
+
+    static String phraseToDna(String phrase) {
+        byte[] bytes = phrase.getBytes(StandardCharsets.UTF_8);
+        StringBuilder dna = new StringBuilder();
+
+        for (byte b : bytes) {
+            for (int i = 6; i >= 0; i -= 2) {
+                int pair = (b >> i) & 0x03;
+
+                if (pair == 0) dna.append('A');
+                else if (pair == 1) dna.append('C');
+                else if (pair == 2) dna.append('G');
+                else dna.append('T');
+            }
+        }
+
+        return dna.toString();
+    }
+
+    static String buildManifest(Geometry g, int packetBytes, String meaningDna, boolean finalManifest) {
+        return "{\n" +
+                "  \"name\":\"DNA Forge Max v8 - Living Wavecode Capsule\",\n" +
+                "  \"final_manifest\":" + finalManifest + ",\n" +
+                "  \"safety\":\"No medical claims. Consent-based, non-invasive, low-power only. Phone screen is not true infrared.\",\n" +
+                "  \"image\":{\"width\":" + g.width + ",\"height\":" + g.height + "},\n" +
+                "  \"packet_bytes\":" + packetBytes + ",\n" +
+                "  \"sync_key\":{\"he_ne_hz\":6328,\"chirp_hz\":[6400,7000],\"gate_hz\":7.83},\n" +
+                "  \"audio_format\":{\"wav\":\"stereo 16-bit PCM\",\"left\":\"forward packet\",\"right\":\"reverse phase-conjugate mirror packet\"},\n" +
+                "  \"error_survival\":{\"crc32\":true,\"header_repetition\":3,\"reverse_packet_crc\":true,\"packet_redundancy\":\"basic\"},\n" +
+                "  \"meaning_layer\":{\"phrase\":\"" + escape(MEANING_PHRASE) + "\",\"symbolic_dna\":\"" + meaningDna + "\"},\n" +
+                "  \"geometry_soul\":{\"brightness\":" + r(g.brightness) + ",\"red\":" + r(g.red) + ",\"green\":" + r(g.green) + ",\"blue\":" + r(g.blue) + ",\"edge_density\":" + r(g.edgeDensity) + ",\"symmetry\":" + r(g.symmetry) + ",\"fractal_compression_proxy\":" + r(g.fractalCompressionProxy) + "},\n" +
+                "  \"gariaev_layer\":{\"zero_hz\":6400,\"one_hz\":7000,\"he_ne_preamble_hz\":6328,\"original_carrier_hz\":[640000,700000]},\n" +
+                "  \"levin_layer\":\"bioelectric morphogenesis map metadata from brightness, edges, symmetry, and color balance\",\n" +
+                "  \"rife_layer\":{\"open_sweep_hz\":[20,20000],\"close_sweep_hz\":[20000,20]},\n" +
+                "  \"tesla_layer\":{\"schumann_gate_hz\":7.83,\"pulse_rhythm\":\"3-6-9\"},\n" +
+                "  \"bearden_scalar_layer\":{\"infolded_potential_metadata\":true,\"phase_conjugate_mirror_channel\":true,\"coil_marker_hz\":384000},\n" +
+                "  \"infrared_layer\":{\"wavelengths_nm\":[632.8,660,850,940],\"mode\":\"metadata plus red-screen He-Ne proxy\"},\n" +
+                "  \"expanded_modules\":[\"donor-template chamber\",\"polarized He-Ne optical correlator\",\"MBER carrier\",\"scalar plasma longitudinal stage\",\"sound-language encoder\",\"water liquid-crystal memory\",\"biofield detector\",\"feedback loop\",\"target resonance lock\",\"control placebo channel\"],\n" +
+                "  \"capsule\":\"image plus holographic geometry plus meaning plus binary plus phase mirror plus Rife sweep plus Tesla gate plus IR profile\"\n" +
+                "}\n";
+    }
+
+    static String escape(String s) {
+        return s.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    static String r(double v) {
+        return String.format(Locale.US, "%.6f", v);
+    }
+
+    static StereoWave makeLivingWavecode(byte[] capsule, String meaningDna) {
+        java.util.ArrayList<Double> left = new java.util.ArrayList<>();
+        java.util.ArrayList<Double> right = new java.util.ArrayList<>();
+
+        // Opening silence.
+        addStereoSilence(left, right, 250);
+
+        // Rife open sweep 20 Hz → 20 kHz.
+        addStereoSweep(left, right, 20.0, 20000.0, 1200.0, 0.22, false);
+
+        // Triple sync key:
+        // 6328 Hz He-Ne gate.
+        addStereoTone(left, right, HE_NE_HZ, HE_NE_MS, 0.42, 0.42, 0.0, Math.PI / 2.0);
+
+        // 6400→7000 Hz carrier lock chirp.
+        addStereoSweep(left, right, F0, F1, 800.0, 0.35, true);
+
+        // 7.83 Hz pulse window.
+        addSchumannPulseWindow(left, right, 900.0);
+
+        // Meaning phrase to DNA rhythm.
+        addMeaningDnaRhythm(left, right, meaningDna);
+
+        // Main stereo packet:
+        // left = forward capsule.
+        // right = reversed capsule.
+        byte[] reversed = reverse(capsule);
+        addPacketBits(left, capsule, false);
+        addPacketBits(right, reversed, true);
+
+        // Close field with reverse Rife sweep.
+        addStereoSweep(left, right, 20000.0, 20.0, 1200.0, 0.22, false);
+
+        addStereoSilence(left, right, 250);
+
+        double[] l = toArray(left);
+        double[] r = toArray(right);
+
+        // Apply global 528 bed, 7.83 gate, 3/6/9 pulse.
+        applyGlobalLayers(l, r);
+
+        return new StereoWave(l, r);
+    }
+
+    static void addMeaningDnaRhythm(java.util.ArrayList<Double> left, java.util.ArrayList<Double> right, String dna) {
+        // Golden-ish living timing for the meaning layer.
+        double shortMs = 3.0;
+        double longMs = 4.854;
+
+        int max = Math.min(dna.length(), 720);
+
+        for (int i = 0; i < max; i++) {
+            char c = dna.charAt(i);
+
+            double hz;
+            double ms;
+
+            if (c == 'A') {
+                hz = 396.0;
+                ms = shortMs;
+            } else if (c == 'C') {
+                hz = 528.0;
+                ms = longMs;
+            } else if (c == 'G') {
+                hz = 639.0;
+                ms = shortMs;
+            } else {
+                hz = 741.0;
+                ms = longMs;
+            }
+
+            addStereoTone(left, right, hz, ms, 0.30, 0.22, 0.0, Math.PI / 2.0);
+            addStereoSilence(left, right, 2.0);
+        }
+
+        addStereoSilence(left, right, 60.0);
+    }
+
+    static void addPacketBits(java.util.ArrayList<Double> target, byte[] data, boolean phaseMirror) {
+        int bitSamples = Math.max(80, (int) (SAMPLE_RATE * BIT_MS / 1000.0));
+        double phase = phaseMirror ? Math.PI / 2.0 : 0.0;
+
+        for (byte b : data) {
             for (int i = 7; i >= 0; i--) {
                 int bit = (b >> i) & 1;
                 double freq = bit == 1 ? F1 : F0;
                 double step = 2.0 * Math.PI * freq / SAMPLE_RATE;
 
                 for (int s = 0; s < bitSamples; s++) {
-                    samples.add(Math.sin(phase) * 0.70);
+                    target.add(Math.sin(phase) * 0.64);
                     phase = (phase + step) % (2.0 * Math.PI);
                 }
             }
         }
-
-        addSilence(samples, 300);
-
-        double[] out = new double[samples.size()];
-
-        for (int i = 0; i < samples.size(); i++) {
-            double t = i / (double) SAMPLE_RATE;
-            double base = samples.get(i);
-            double aura = Math.sin(2.0 * Math.PI * AURA_HZ * t) * 0.07;
-
-            double gateWave = (1.0 + Math.sin(2.0 * Math.PI * SCHUMANN_HZ * t)) / 2.0;
-            double gateEnv = 0.65 + 0.35 * gateWave;
-
-            double pulse = 1.0;
-            int beat = ((int) (t * 9.0)) % 9;
-            if (beat == 2 || beat == 5 || beat == 8) pulse = 1.08;
-
-            out[i] = clamp(base * gateEnv * pulse + aura);
-        }
-
-        return out;
     }
 
-    static void addSilence(java.util.ArrayList<Double> samples, double ms) {
+    static void addStereoSilence(java.util.ArrayList<Double> l, java.util.ArrayList<Double> r, double ms) {
         int n = (int) (SAMPLE_RATE * ms / 1000.0);
-        for (int i = 0; i < n; i++) samples.add(0.0);
+        for (int i = 0; i < n; i++) {
+            l.add(0.0);
+            r.add(0.0);
+        }
     }
 
-    static void addTone(java.util.ArrayList<Double> samples, double freq, double ms, double amp) {
+    static void addStereoTone(
+            java.util.ArrayList<Double> l,
+            java.util.ArrayList<Double> r,
+            double freq,
+            double ms,
+            double ampL,
+            double ampR,
+            double phaseL,
+            double phaseR
+    ) {
         int n = (int) (SAMPLE_RATE * ms / 1000.0);
         int fade = Math.max(1, (int) (SAMPLE_RATE * 0.005));
 
@@ -465,8 +724,88 @@ public class MainActivity extends Activity {
             if (i < fade) env = i / (double) fade;
             else if (i > n - fade) env = Math.max(0.0, (n - i) / (double) fade);
 
-            samples.add(Math.sin(2.0 * Math.PI * freq * i / SAMPLE_RATE) * amp * env);
+            double t = i / (double) SAMPLE_RATE;
+            l.add(Math.sin(2.0 * Math.PI * freq * t + phaseL) * ampL * env);
+            r.add(Math.sin(2.0 * Math.PI * freq * t + phaseR) * ampR * env);
         }
+    }
+
+    static void addStereoSweep(
+            java.util.ArrayList<Double> l,
+            java.util.ArrayList<Double> r,
+            double startHz,
+            double endHz,
+            double ms,
+            double amp,
+            boolean oppositePhase
+    ) {
+        int n = (int) (SAMPLE_RATE * ms / 1000.0);
+        double phaseL = 0.0;
+        double phaseR = oppositePhase ? Math.PI : Math.PI / 2.0;
+
+        for (int i = 0; i < n; i++) {
+            double frac = i / Math.max(1.0, n - 1.0);
+            double freq = startHz + (endHz - startHz) * frac;
+            double step = 2.0 * Math.PI * freq / SAMPLE_RATE;
+
+            l.add(Math.sin(phaseL) * amp);
+            r.add(Math.sin(phaseR) * amp);
+
+            phaseL = (phaseL + step) % (2.0 * Math.PI);
+            phaseR = (phaseR + step) % (2.0 * Math.PI);
+        }
+    }
+
+    static void addSchumannPulseWindow(java.util.ArrayList<Double> l, java.util.ArrayList<Double> r, double ms) {
+        int n = (int) (SAMPLE_RATE * ms / 1000.0);
+
+        for (int i = 0; i < n; i++) {
+            double t = i / (double) SAMPLE_RATE;
+            double gate = (1.0 + Math.sin(2.0 * Math.PI * SCHUMANN_HZ * t)) / 2.0;
+            double carrier = Math.sin(2.0 * Math.PI * 528.0 * t) * 0.18 * gate;
+            l.add(carrier);
+            r.add(-carrier);
+        }
+    }
+
+    static void applyGlobalLayers(double[] l, double[] r) {
+        int n = Math.min(l.length, r.length);
+
+        for (int i = 0; i < n; i++) {
+            double t = i / (double) SAMPLE_RATE;
+
+            double aura = Math.sin(2.0 * Math.PI * AURA_HZ * t) * AURA_AMP;
+
+            double gateWave = (1.0 + Math.sin(2.0 * Math.PI * SCHUMANN_HZ * t)) / 2.0;
+            double gateEnv = 1.0 - GATE_DEPTH + GATE_DEPTH * gateWave;
+
+            double pulse = 1.0;
+            int beat = ((int) (t * 9.0)) % 9;
+            if (beat == 2 || beat == 5 || beat == 8) pulse = 1.08;
+
+            l[i] = clamp((l[i] * gateEnv * pulse) + aura);
+            r[i] = clamp((r[i] * gateEnv * pulse) - aura);
+        }
+    }
+
+    static double[] toArray(java.util.ArrayList<Double> list) {
+        double[] out = new double[list.size()];
+
+        for (int i = 0; i < list.size(); i++) {
+            out[i] = list.get(i);
+        }
+
+        return out;
+    }
+
+    static byte[] reverse(byte[] input) {
+        byte[] out = new byte[input.length];
+
+        for (int i = 0; i < input.length; i++) {
+            out[i] = input[input.length - 1 - i];
+        }
+
+        return out;
     }
 
     static double clamp(double x) {
@@ -475,8 +814,11 @@ public class MainActivity extends Activity {
         return x;
     }
 
-    static byte[] buildWavBytes(double[] samples) throws Exception {
-        int dataSize = samples.length * 2;
+    static byte[] buildStereoWavBytes(double[] left, double[] right) throws Exception {
+        int frames = Math.min(left.length, right.length);
+        int channels = 2;
+        int bytesPerSample = 2;
+        int dataSize = frames * channels * bytesPerSample;
         int totalSize = 36 + dataSize;
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -488,18 +830,18 @@ public class MainActivity extends Activity {
         writeAscii(out, "fmt ");
         writeLE32(out, 16);
         writeLE16(out, 1);
-        writeLE16(out, 1);
+        writeLE16(out, channels);
         writeLE32(out, SAMPLE_RATE);
-        writeLE32(out, SAMPLE_RATE * 2);
-        writeLE16(out, 2);
+        writeLE32(out, SAMPLE_RATE * channels * bytesPerSample);
+        writeLE16(out, channels * bytesPerSample);
         writeLE16(out, 16);
 
         writeAscii(out, "data");
         writeLE32(out, dataSize);
 
-        for (double s : samples) {
-            int v = (int) (clamp(s) * 32767.0);
-            writeLE16(out, v);
+        for (int i = 0; i < frames; i++) {
+            writeLE16(out, (int) (clamp(left[i]) * 32767.0));
+            writeLE16(out, (int) (clamp(right[i]) * 32767.0));
         }
 
         return out.toByteArray();
