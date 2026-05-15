@@ -3,10 +3,14 @@ package org.vhanma.dnaforgemax;
 import android.app.Activity;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Build;
 import android.content.Intent;
+import android.content.ContentValues;
+import android.content.ContentResolver;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
+import android.provider.MediaStore;
 import android.view.Gravity;
 import android.widget.Button;
 import android.widget.TextView;
@@ -15,9 +19,8 @@ import android.widget.ScrollView;
 
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
-import java.io.File;
 import java.io.InputStream;
-import java.io.FileOutputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.zip.CRC32;
 import java.util.zip.Deflater;
@@ -25,8 +28,16 @@ import java.util.zip.Deflater;
 public class MainActivity extends Activity {
     private static final int PICK_IMAGE = 777;
 
+    LinearLayout root;
     TextView log;
     Button pickButton;
+    Button playButton;
+    Button shareButton;
+    Button irButton;
+
+    Uri lastWavUri = null;
+    Uri lastManifestUri = null;
+    boolean redMode = false;
 
     static final int SAMPLE_RATE = 44100;
     static final double F0 = 6400.0;
@@ -41,7 +52,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle b) {
         super.onCreate(b);
 
-        LinearLayout root = new LinearLayout(this);
+        root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(24, 24, 24, 24);
         root.setBackgroundColor(0xff070714);
@@ -57,17 +68,34 @@ public class MainActivity extends Activity {
         pickButton.setText("PICK IMAGE → MAKE WAVECODE WAV");
         root.addView(pickButton);
 
+        playButton = new Button(this);
+        playButton.setText("PLAY LAST WAV");
+        playButton.setEnabled(false);
+        root.addView(playButton);
+
+        shareButton = new Button(this);
+        shareButton.setText("SHARE LAST WAV");
+        shareButton.setEnabled(false);
+        root.addView(shareButton);
+
+        irButton = new Button(this);
+        irButton.setText("RED / IR SCREEN PROXY");
+        root.addView(irButton);
+
         ScrollView scroll = new ScrollView(this);
         log = new TextView(this);
         log.setTextColor(0xffb8ffb8);
         log.setTextSize(13);
-        log.setText("Ready.\nTap the button and choose an image.\n\n");
+        log.setText("Ready.\nTap PICK IMAGE and choose an image.\n\n");
         scroll.addView(log);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
         setContentView(root);
 
         pickButton.setOnClickListener(v -> openPicker());
+        playButton.setOnClickListener(v -> playLast());
+        shareButton.setOnClickListener(v -> shareLast());
+        irButton.setOnClickListener(v -> toggleRedProxy());
     }
 
     void openPicker() {
@@ -86,7 +114,12 @@ public class MainActivity extends Activity {
 
             new Thread(() -> {
                 try {
-                    runOnUiThread(() -> pickButton.setEnabled(false));
+                    runOnUiThread(() -> {
+                        pickButton.setEnabled(false);
+                        playButton.setEnabled(false);
+                        shareButton.setEnabled(false);
+                    });
+
                     say("Reading image...");
 
                     InputStream in = getContentResolver().openInputStream(uri);
@@ -97,22 +130,32 @@ public class MainActivity extends Activity {
                         return;
                     }
 
-                    File outDir = new File(getExternalFilesDir(Environment.DIRECTORY_MUSIC), "DNA_FORGE_MAX");
-                    outDir.mkdirs();
-
                     String base = "DNA_Forge_Max_" + System.currentTimeMillis();
-                    File wav = new File(outDir, base + ".wav");
-                    File manifest = new File(outDir, base + "_manifest.json");
 
-                    encodeBitmap(bmp, wav, manifest);
+                    EncodeResult resultObj = encodeBitmap(bmp);
+
+                    say("Saving WAV to public Music folder...");
+                    lastWavUri = saveWavToMusic(base + ".wav", resultObj.samples);
+
+                    say("Saving manifest to public Downloads folder...");
+                    lastManifestUri = saveTextToDownloads(base + "_manifest.json", resultObj.manifest);
 
                     say("");
                     say("DONE.");
-                    say("WAV:");
-                    say(wav.getAbsolutePath());
                     say("");
-                    say("Manifest:");
-                    say(manifest.getAbsolutePath());
+                    say("WAV is now in:");
+                    say("Music/DNA_FORGE_MAX/" + base + ".wav");
+                    say("");
+                    say("Manifest is now in:");
+                    say("Downloads/DNA_FORGE_MAX/" + base + "_manifest.json");
+                    say("");
+                    say("Tap PLAY LAST WAV to hear it.");
+                    say("Tap SHARE LAST WAV to send/export it.");
+
+                    runOnUiThread(() -> {
+                        playButton.setEnabled(true);
+                        shareButton.setEnabled(true);
+                    });
                 } catch (Exception e) {
                     say("ERROR: " + e.toString());
                 } finally {
@@ -126,20 +169,64 @@ public class MainActivity extends Activity {
         runOnUiThread(() -> log.append(s + "\n"));
     }
 
-    static Bitmap shrink(Bitmap src) {
-        int w = src.getWidth();
-        int h = src.getHeight();
+    void playLast() {
+        if (lastWavUri == null) {
+            say("No WAV yet.");
+            return;
+        }
 
-        double scale = Math.min((double) MAX_DIM / w, (double) MAX_DIM / h);
-        if (scale >= 1.0) return src.copy(Bitmap.Config.ARGB_8888, false);
-
-        int nw = Math.max(1, (int) Math.round(w * scale));
-        int nh = Math.max(1, (int) Math.round(h * scale));
-
-        return Bitmap.createScaledBitmap(src, nw, nh, true);
+        try {
+            Intent i = new Intent(Intent.ACTION_VIEW);
+            i.setDataAndType(lastWavUri, "audio/wav");
+            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(i);
+        } catch (Exception e) {
+            say("Could not open audio player.");
+            say("Use Files app → Music → DNA_FORGE_MAX.");
+        }
     }
 
-    void encodeBitmap(Bitmap original, File wavFile, File manifestFile) throws Exception {
+    void shareLast() {
+        if (lastWavUri == null) {
+            say("No WAV yet.");
+            return;
+        }
+
+        try {
+            Intent send = new Intent(Intent.ACTION_SEND);
+            send.setType("audio/wav");
+            send.putExtra(Intent.EXTRA_STREAM, lastWavUri);
+            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(send, "Share DNA Forge WAV"));
+        } catch (Exception e) {
+            say("Could not share WAV.");
+        }
+    }
+
+    void toggleRedProxy() {
+        redMode = !redMode;
+
+        if (redMode) {
+            root.setBackgroundColor(0xff330000);
+            say("RED / IR proxy ON.");
+            say("Note: this is visible red-screen proxy only. Phone screen is not true infrared.");
+        } else {
+            root.setBackgroundColor(0xff070714);
+            say("RED / IR proxy OFF.");
+        }
+    }
+
+    static class EncodeResult {
+        double[] samples;
+        String manifest;
+
+        EncodeResult(double[] samples, String manifest) {
+            this.samples = samples;
+            this.manifest = manifest;
+        }
+    }
+
+    EncodeResult encodeBitmap(Bitmap original) throws Exception {
         say("Shrinking image...");
         Bitmap bmp = shrink(original);
 
@@ -172,13 +259,88 @@ public class MainActivity extends Activity {
         say("Generating wavecode audio...");
 
         double[] samples = makeWavecode(packet);
-        writeWav(wavFile, samples);
-
-        FileOutputStream mf = new FileOutputStream(manifestFile);
-        mf.write(metadata.getBytes(StandardCharsets.UTF_8));
-        mf.close();
 
         say("Seconds: " + Math.round(samples.length * 10.0 / SAMPLE_RATE) / 10.0);
+
+        return new EncodeResult(samples, metadata);
+    }
+
+    Uri saveWavToMusic(String displayName, double[] samples) throws Exception {
+        byte[] wavBytes = buildWavBytes(samples);
+
+        ContentResolver resolver = getContentResolver();
+
+        ContentValues values = new ContentValues();
+        values.put(MediaStore.Audio.Media.DISPLAY_NAME, displayName);
+        values.put(MediaStore.Audio.Media.MIME_TYPE, "audio/wav");
+
+        if (Build.VERSION.SDK_INT >= 29) {
+            values.put(MediaStore.Audio.Media.RELATIVE_PATH, Environment.DIRECTORY_MUSIC + "/DNA_FORGE_MAX");
+            values.put(MediaStore.Audio.Media.IS_PENDING, 1);
+        }
+
+        Uri uri = resolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values);
+
+        if (uri == null) {
+            throw new Exception("Could not create WAV in Music.");
+        }
+
+        OutputStream out = resolver.openOutputStream(uri);
+        out.write(wavBytes);
+        out.flush();
+        out.close();
+
+        if (Build.VERSION.SDK_INT >= 29) {
+            ContentValues done = new ContentValues();
+            done.put(MediaStore.Audio.Media.IS_PENDING, 0);
+            resolver.update(uri, done, null, null);
+        }
+
+        return uri;
+    }
+
+    Uri saveTextToDownloads(String displayName, String text) throws Exception {
+        ContentResolver resolver = getContentResolver();
+
+        if (Build.VERSION.SDK_INT >= 29) {
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.Downloads.DISPLAY_NAME, displayName);
+            values.put(MediaStore.Downloads.MIME_TYPE, "application/json");
+            values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/DNA_FORGE_MAX");
+            values.put(MediaStore.Downloads.IS_PENDING, 1);
+
+            Uri uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+
+            if (uri == null) {
+                throw new Exception("Could not create manifest in Downloads.");
+            }
+
+            OutputStream out = resolver.openOutputStream(uri);
+            out.write(text.getBytes(StandardCharsets.UTF_8));
+            out.flush();
+            out.close();
+
+            ContentValues done = new ContentValues();
+            done.put(MediaStore.Downloads.IS_PENDING, 0);
+            resolver.update(uri, done, null, null);
+
+            return uri;
+        }
+
+        return null;
+    }
+
+    static Bitmap shrink(Bitmap src) {
+        int w = src.getWidth();
+        int h = src.getHeight();
+
+        double scale = Math.min((double) MAX_DIM / w, (double) MAX_DIM / h);
+        if (scale >= 1.0) return src.copy(Bitmap.Config.ARGB_8888, false);
+
+        int nw = Math.max(1, (int) Math.round(w * scale));
+        int nh = Math.max(1, (int) Math.round(h * scale));
+
+        return Bitmap.createScaledBitmap(src, nw, nh, true);
     }
 
     static byte[] bitmapToRgba(Bitmap bmp) throws Exception {
@@ -225,7 +387,7 @@ public class MainActivity extends Activity {
                 "  \"rife_layer\":{\"sweep_hz\":[20,20000]},\n" +
                 "  \"tesla_layer\":{\"schumann_gate_hz\":7.83,\"pulse_rhythm\":\"3-6-9\"},\n" +
                 "  \"bearden_scalar_layer\":{\"coil_marker_hz\":384000,\"phase_conjugate_reverse_hash\":true},\n" +
-                "  \"infrared_layer\":{\"wavelengths_nm\":[632.8,660,850,940],\"note\":\"metadata only\"},\n" +
+                "  \"infrared_layer\":{\"wavelengths_nm\":[632.8,660,850,940],\"note\":\"metadata plus red-screen proxy only\"},\n" +
                 "  \"expanded_modules\":[\"donor-template chamber\",\"polarized He-Ne optical correlator\",\"MBER carrier\",\"scalar plasma longitudinal stage\",\"sound-language encoder\",\"water liquid-crystal memory\",\"biofield detector\",\"feedback loop\",\"target resonance lock\",\"control placebo channel\"],\n" +
                 "  \"meaning_phrase\":\"restore coherence copy this pattern stabilize this geometry resonate with this template\"\n" +
                 "}\n";
@@ -313,11 +475,11 @@ public class MainActivity extends Activity {
         return x;
     }
 
-    static void writeWav(File file, double[] samples) throws Exception {
+    static byte[] buildWavBytes(double[] samples) throws Exception {
         int dataSize = samples.length * 2;
         int totalSize = 36 + dataSize;
 
-        FileOutputStream out = new FileOutputStream(file);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
 
         writeAscii(out, "RIFF");
         writeLE32(out, totalSize);
@@ -340,20 +502,19 @@ public class MainActivity extends Activity {
             writeLE16(out, v);
         }
 
-        out.flush();
-        out.close();
+        return out.toByteArray();
     }
 
-    static void writeAscii(FileOutputStream out, String s) throws Exception {
+    static void writeAscii(ByteArrayOutputStream out, String s) throws Exception {
         out.write(s.getBytes(StandardCharsets.US_ASCII));
     }
 
-    static void writeLE16(FileOutputStream out, int v) throws Exception {
+    static void writeLE16(ByteArrayOutputStream out, int v) {
         out.write(v & 0xff);
         out.write((v >> 8) & 0xff);
     }
 
-    static void writeLE32(FileOutputStream out, int v) throws Exception {
+    static void writeLE32(ByteArrayOutputStream out, int v) {
         out.write(v & 0xff);
         out.write((v >> 8) & 0xff);
         out.write((v >> 16) & 0xff);
