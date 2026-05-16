@@ -11,6 +11,6 @@ android {
         minSdk 24
         targetSdk 35
         versionCode 12
-        versionName "10.0-hermes-reference-lock"
+        versionName "11.0-finesse"
     }
 }

@@ -45,12 +45,12 @@ jobs:
           mkdir -p artifact-apk
           find . -type f -iname "*.apk" | sort | tee apk-files.txt
           RAW_APK="$(head -n 1 apk-files.txt)"
-          cp "$RAW_APK" artifact-apk/DNA-Forge-Max-v10-Hermes-debug.apk
+          cp "$RAW_APK" artifact-apk/DNA-Forge-Max-v11-finesse-debug.apk
           ls -lh artifact-apk/
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DNA-Forge-Max-v10-Hermes-debug-apk
+          name: DNA-Forge-Max-v11-finesse-debug-apk
           path: artifact-apk/*.apk
           if-no-files-found: error
