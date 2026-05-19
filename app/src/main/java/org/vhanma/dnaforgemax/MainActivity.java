@@ -43,6 +43,7 @@ public class MainActivity extends Activity {
     EditText phraseInput;
     Button imageButton;
     Button micButton;
+    Button correlatorButton;
     Button forgeButton;
     Button playButton;
     Button shareButton;
@@ -51,6 +52,7 @@ public class MainActivity extends Activity {
     Bitmap donorBitmap = null;
     VisualImprint visualImprint = null;
     AcousticImprint acousticImprint = null;
+    OpticalCorrelator opticalCorrelator = null;
     Uri lastWavUri = null;
     Uri lastManifestUri = null;
 
@@ -92,7 +94,7 @@ public class MainActivity extends Activity {
         root.setBackgroundColor(0xff070714);
 
         TextView title = new TextView(this);
-        title.setText("DNA Forge Max v11\nGariaev-Jiang Donor Imprint Engine");
+        title.setText("DNA Forge Max v12\nGariaev Optical Correlator Emulator");
         title.setTextColor(0xff00e5ff);
         title.setTextSize(20);
         title.setGravity(Gravity.CENTER);
@@ -114,6 +116,11 @@ public class MainActivity extends Activity {
         micButton = new Button(this);
         micButton.setText("2. MIC RESONANCE SCAN");
         root.addView(micButton);
+
+        correlatorButton = new Button(this);
+        correlatorButton.setText("2B. GARIAEV CORRELATOR SCAN");
+        correlatorButton.setEnabled(false);
+        root.addView(correlatorButton);
 
         forgeButton = new Button(this);
         forgeButton.setText("3. FORGE v11 BIOTRON WAV");
@@ -140,7 +147,7 @@ public class MainActivity extends Activity {
         log.setTextSize(13);
         log.setText(
                 "Ready.\n\n" +
-                "v11 adds donor image scan, mic resonance scan, phase-shift matrix, Gariaev optical-correlator profile, Jiang/Biotron profile, and hardware export manifest.\n\n" +
+                "v12 adds multi-pass Gariaev optical-correlator emulation: dark frame, red frame, dim-red frame, 7.83 pulse proxy, 3/6/9 pulse proxy, speckle-change proxy, optical feedback matrix, and MBER modulation index.\n\n" +
                 "Phone mapping:\n" +
                 "camera = donor scanner\n" +
                 "microphone = acoustic resonance scanner\n" +
@@ -155,6 +162,7 @@ public class MainActivity extends Activity {
 
         imageButton.setOnClickListener(v -> openPicker());
         micButton.setOnClickListener(v -> startMicScan());
+        correlatorButton.setOnClickListener(v -> startCorrelatorScan());
         forgeButton.setOnClickListener(v -> startForge());
         playButton.setOnClickListener(v -> playLast());
         shareButton.setOnClickListener(v -> shareLast());
@@ -200,6 +208,8 @@ public class MainActivity extends Activity {
                     visualImprint = extractVisualImprint(small, rgba, compressed);
 
                     say("Visual donor scan complete.");
+                    opticalCorrelator = null;
+                    runOnUiThread(() -> correlatorButton.setEnabled(true));
                     say("Size: " + visualImprint.width + "x" + visualImprint.height);
                     say("Brightness: " + r(visualImprint.brightness));
                     say("Symmetry: " + r(visualImprint.symmetry));
@@ -246,9 +256,59 @@ public class MainActivity extends Activity {
         }).start();
     }
 
+
+    void startCorrelatorScan() {
+        if (donorBitmap == null || visualImprint == null) {
+            say("Do DONOR IMAGE SCAN first.");
+            return;
+        }
+
+        new Thread(() -> {
+            try {
+                runOnUiThread(() -> correlatorButton.setEnabled(false));
+
+                say("Starting v12 Gariaev optical-correlator emulator...");
+                say("Pass 1: dark-frame control...");
+                flashRoot(0xff000000, 160);
+                say("Pass 2: red reference illumination...");
+                flashRoot(0xff660000, 160);
+                say("Pass 3: dim-red reference illumination...");
+                flashRoot(0xff220000, 160);
+                say("Pass 4: 7.83 Hz pulse proxy...");
+                flashRoot(0xff440000, 160);
+                say("Pass 5: 3/6/9 pulse proxy...");
+                flashRoot(0xff880000, 160);
+                flashRoot(0xff070714, 80);
+
+                Bitmap small = shrink(donorBitmap);
+                opticalCorrelator = computeOpticalCorrelator(small, visualImprint);
+
+                say("Correlator scan complete.");
+                say("Speckle-change proxy: " + r(opticalCorrelator.speckleChange));
+                say("Brightness fluctuation: " + r(opticalCorrelator.brightnessFluctuation));
+                say("Edge fluctuation: " + r(opticalCorrelator.edgeFluctuation));
+                say("Color shift: " + r(opticalCorrelator.colorShift));
+                say("MBER modulation index: " + r(opticalCorrelator.mberModulationIndex));
+
+                updateForgeReady();
+            } catch (Exception e) {
+                say("CORRELATOR ERROR: " + e.toString());
+            } finally {
+                runOnUiThread(() -> correlatorButton.setEnabled(true));
+            }
+        }).start();
+    }
+
+    void flashRoot(int color, long ms) {
+        runOnUiThread(() -> root.setBackgroundColor(color));
+        try { Thread.sleep(ms); } catch (Exception ignored) {}
+    }
+
     void updateForgeReady() {
         runOnUiThread(() -> {
-            forgeButton.setEnabled(donorBitmap != null && visualImprint != null);
+            boolean ready = donorBitmap != null && visualImprint != null;
+            forgeButton.setEnabled(ready);
+            correlatorButton.setEnabled(ready);
         });
     }
 
@@ -277,7 +337,12 @@ public class MainActivity extends Activity {
                 }
 
                 say("Forging Gariaev-Jiang donor imprint profile...");
-                Capsule capsule = buildCapsule(donorBitmap, visualImprint, acousticImprint, phrase);
+                if (opticalCorrelator == null) {
+                    say("No correlator scan found. Auto-building optical correlator from donor image.");
+                    opticalCorrelator = computeOpticalCorrelator(shrink(donorBitmap), visualImprint);
+                }
+
+                Capsule capsule = buildCapsule(donorBitmap, visualImprint, acousticImprint, opticalCorrelator, phrase);
 
                 int totalFrames = calculateTotalFrames(capsule.capsuleBytes.length, capsule.meaningDna);
 
@@ -417,20 +482,37 @@ public class MainActivity extends Activity {
         }
     }
 
+
+    static class OpticalCorrelator {
+        double darkMean;
+        double redMean;
+        double dimRedMean;
+        double schumannPulseMean;
+        double pulse369Mean;
+        double speckleChange;
+        double brightnessFluctuation;
+        double edgeFluctuation;
+        double colorShift;
+        double mberModulationIndex;
+        double[] feedbackMatrix;
+    }
+
     static class Capsule {
         byte[] capsuleBytes;
         String manifest;
         String meaningDna;
         VisualImprint visual;
         AcousticImprint acoustic;
+        OpticalCorrelator optical;
         double[] phaseMatrix;
 
-        Capsule(byte[] capsuleBytes, String manifest, String meaningDna, VisualImprint visual, AcousticImprint acoustic, double[] phaseMatrix) {
+        Capsule(byte[] capsuleBytes, String manifest, String meaningDna, VisualImprint visual, AcousticImprint acoustic, OpticalCorrelator optical, double[] phaseMatrix) {
             this.capsuleBytes = capsuleBytes;
             this.manifest = manifest;
             this.meaningDna = meaningDna;
             this.visual = visual;
             this.acoustic = acoustic;
+            this.optical = optical;
             this.phaseMatrix = phaseMatrix;
         }
     }
@@ -557,15 +639,15 @@ public class MainActivity extends Activity {
         return sPrev2 * sPrev2 + sPrev * sPrev - coeff * sPrev * sPrev2;
     }
 
-    Capsule buildCapsule(Bitmap original, VisualImprint visual, AcousticImprint acoustic, String phrase) throws Exception {
+    Capsule buildCapsule(Bitmap original, VisualImprint visual, AcousticImprint acoustic, OpticalCorrelator optical, String phrase) throws Exception {
         Bitmap bmp = shrink(original);
         byte[] rgba = bitmapToRgba(bmp);
         byte[] compressed = deflate(rgba);
 
         String meaningDna = phraseToDna(phrase);
-        double[] phaseMatrix = buildPhaseMatrix(visual, acoustic, phrase);
+        double[] phaseMatrix = buildPhaseMatrix(visual, acoustic, optical, phrase);
 
-        String embeddedManifest = buildManifest(visual, acoustic, phaseMatrix, compressed.length, 0, meaningDna, phrase, false);
+        String embeddedManifest = buildManifest(visual, acoustic, optical, phaseMatrix, compressed.length, 0, meaningDna, phrase, false);
         byte[] metaBytes = embeddedManifest.getBytes(StandardCharsets.UTF_8);
 
         CRC32 payloadCrc = new CRC32();
@@ -611,6 +693,7 @@ public class MainActivity extends Activity {
         String finalManifest = buildManifest(
                 visual,
                 acoustic,
+                optical,
                 phaseMatrix,
                 compressed.length,
                 capsuleBytes.length,
@@ -619,10 +702,124 @@ public class MainActivity extends Activity {
                 true
         );
 
-        return new Capsule(capsuleBytes, finalManifest, meaningDna, visual, acoustic, phaseMatrix);
+        return new Capsule(capsuleBytes, finalManifest, meaningDna, visual, acoustic, optical, phaseMatrix);
     }
 
-    static double[] buildPhaseMatrix(VisualImprint v, AcousticImprint a, String phrase) {
+
+    static OpticalCorrelator computeOpticalCorrelator(Bitmap bmp, VisualImprint v) {
+        OpticalCorrelator o = new OpticalCorrelator();
+
+        int w = bmp.getWidth();
+        int h = bmp.getHeight();
+        int count = Math.max(1, w * h);
+
+        double dark = 0;
+        double red = 0;
+        double dimRed = 0;
+        double schumann = 0;
+        double pulse369 = 0;
+        double speckle = 0;
+        double colorShift = 0;
+        double edgeBase = 0;
+        double edgeRed = 0;
+
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int c = bmp.getPixel(x, y);
+                int r = (c >> 16) & 0xff;
+                int g = (c >> 8) & 0xff;
+                int b = c & 0xff;
+
+                double gray = (r + g + b) / 3.0;
+
+                double darkFrame = gray * 0.035;
+                double redFrame = r;
+                double dimRedFrame = r * 0.45;
+
+                double schGate = 0.5 + 0.5 * Math.sin(2.0 * Math.PI * ((x + y + 1) / Math.max(1.0, w + h)));
+                double schFrame = gray * schGate;
+
+                int pulsePhase = (x + y) % 9;
+                double pulseBoost = (pulsePhase == 2 || pulsePhase == 5 || pulsePhase == 8) ? 1.0 : 0.35;
+                double pulseFrame = gray * pulseBoost;
+
+                dark += darkFrame;
+                red += redFrame;
+                dimRed += dimRedFrame;
+                schumann += schFrame;
+                pulse369 += pulseFrame;
+
+                speckle += Math.abs(redFrame - darkFrame) + Math.abs(schFrame - dimRedFrame) + Math.abs(pulseFrame - schFrame);
+                colorShift += (Math.abs(r - g) + Math.abs(r - b)) / 2.0;
+
+                if (x + 1 < w) {
+                    int c2 = bmp.getPixel(x + 1, y);
+                    int r2 = (c2 >> 16) & 0xff;
+                    int g2 = (c2 >> 8) & 0xff;
+                    int b2 = c2 & 0xff;
+                    double gray2 = (r2 + g2 + b2) / 3.0;
+                    edgeBase += Math.abs(gray - gray2);
+                    edgeRed += Math.abs(r - r2);
+                }
+            }
+        }
+
+        o.darkMean = dark / (count * 255.0);
+        o.redMean = red / (count * 255.0);
+        o.dimRedMean = dimRed / (count * 255.0);
+        o.schumannPulseMean = schumann / (count * 255.0);
+        o.pulse369Mean = pulse369 / (count * 255.0);
+
+        o.speckleChange = clamp(speckle / (count * 255.0 * 3.0));
+        o.colorShift = clamp(colorShift / (count * 255.0));
+        o.edgeFluctuation = clamp(Math.abs(edgeRed - edgeBase) / Math.max(1.0, count * 255.0));
+        o.brightnessFluctuation = clamp(
+                standardDeviation(new double[] { o.darkMean, o.redMean, o.dimRedMean, o.schumannPulseMean, o.pulse369Mean })
+        );
+
+        o.mberModulationIndex = clamp(
+                o.speckleChange * 0.34 +
+                o.brightnessFluctuation * 0.22 +
+                o.edgeFluctuation * 0.18 +
+                o.colorShift * 0.16 +
+                v.fractalCompressionProxy * 0.10
+        );
+
+        o.feedbackMatrix = new double[16];
+
+        for (int i = 0; i < o.feedbackMatrix.length; i++) {
+            double spiral = 0.5 + 0.5 * Math.sin((i + 1) * 1.61803398875);
+            double pulse = ((i % 9) == 2 || (i % 9) == 5 || (i % 9) == 8) ? 1.0 : 0.45;
+
+            double value =
+                    o.mberModulationIndex * 0.35 +
+                    o.speckleChange * 0.22 +
+                    o.colorShift * 0.15 +
+                    v.symmetry * 0.12 +
+                    spiral * 0.10 +
+                    pulse * 0.06;
+
+            o.feedbackMatrix[i] = clamp(value) * Math.PI;
+        }
+
+        return o;
+    }
+
+    static double standardDeviation(double[] x) {
+        double mean = 0;
+        for (double v : x) mean += v;
+        mean /= Math.max(1, x.length);
+
+        double sum = 0;
+        for (double v : x) {
+            double d = v - mean;
+            sum += d * d;
+        }
+
+        return Math.sqrt(sum / Math.max(1, x.length));
+    }
+
+    static double[] buildPhaseMatrix(VisualImprint v, AcousticImprint a, OpticalCorrelator o, String phrase) {
         double[] m = new double[16];
 
         CRC32 crc = new CRC32();
@@ -634,8 +831,9 @@ public class MainActivity extends Activity {
             double color = (i % 3 == 0) ? v.red : (i % 3 == 1) ? v.green : v.blue;
             double geom = (v.symmetry + v.edgeDensity + v.brightness) / 3.0;
             double code = ((phraseCrc >> (i % 24)) & 0xff) / 255.0;
+            double optical = o.feedbackMatrix[i % o.feedbackMatrix.length] / Math.PI;
 
-            m[i] = (audio * 0.35 + color * 0.25 + geom * 0.25 + code * 0.15) * Math.PI;
+            m[i] = (audio * 0.25 + color * 0.18 + geom * 0.18 + code * 0.12 + optical * 0.27) * Math.PI;
         }
 
         return m;
@@ -855,6 +1053,7 @@ public class MainActivity extends Activity {
         total += frames(HE_NE_MS);
         total += frames(300);
         total += frames(300);
+        total += opticalCorrelatorFrames();
         total += visualImprintFrames();
         total += acousticImprintFrames();
         total += hermesFrames();
@@ -872,6 +1071,10 @@ public class MainActivity extends Activity {
 
     static int bitFrames() {
         return Math.max(60, frames(BIT_MS));
+    }
+
+    static int opticalCorrelatorFrames() {
+        return 16 * (frames(24) + frames(3));
     }
 
     static int visualImprintFrames() {
@@ -914,6 +1117,9 @@ public class MainActivity extends Activity {
         streamStereoTone(sw, HE_NE_HZ, HE_NE_MS, 0.38, 0.38, 0, Math.PI / 2.0);
         streamStereoSweep(sw, F0, F1, 300, 0.30, true);
         streamSchumannPulseWindow(sw, 300);
+
+        say("Writing v12 optical feedback matrix layer...");
+        streamOpticalFeedbackLayer(sw, capsule.optical);
 
         say("Writing visual donor imprint layer...");
         streamVisualImprint(sw, capsule.visual);
@@ -1029,6 +1235,26 @@ public class MainActivity extends Activity {
             double gate = (1.0 + Math.sin(2.0 * Math.PI * SCHUMANN_HZ * t)) / 2.0;
             double carrier = Math.sin(2.0 * Math.PI * 528.0 * t) * 0.15 * gate;
             writeReferenceLockedFrame(sw, carrier, -carrier);
+        }
+    }
+
+
+    static void streamOpticalFeedbackLayer(SampleWriter sw, OpticalCorrelator o) throws Exception {
+        double[] carriers = new double[] {
+                6328.0, 6400.0, 7000.0, 528.0,
+                396.0, 417.0, 432.0, 741.0,
+                852.0, 963.0, 1111.0, 1361.0,
+                1744.0, 3200.0, 4096.0, 5280.0
+        };
+
+        for (int i = 0; i < o.feedbackMatrix.length; i++) {
+            double matrix = o.feedbackMatrix[i] / Math.PI;
+            double freq = carriers[i % carriers.length] + (i * 7.83);
+            double amp = 0.06 + 0.22 * clamp(matrix);
+            double rightPhase = o.feedbackMatrix[i];
+
+            streamStereoTone(sw, freq, 24.0, amp, amp * 0.78, 0.0, rightPhase);
+            streamStereoSilence(sw, 3.0);
         }
     }
 
@@ -1208,6 +1434,7 @@ public class MainActivity extends Activity {
     static String buildManifest(
             VisualImprint v,
             AcousticImprint a,
+            OpticalCorrelator o,
             double[] phaseMatrix,
             int compressedBytes,
             int capsuleBytes,
@@ -1216,11 +1443,12 @@ public class MainActivity extends Activity {
             boolean finalManifest
     ) {
         return "{\n" +
-                "  \"name\":\"DNA Forge Max v11 - Gariaev-Jiang Biotron Donor Imprint Engine\",\n" +
+                "  \"name\":\"DNA Forge Max v12 - Gariaev Optical Correlator Emulator\",\n" +
                 "  \"final_manifest\":" + finalManifest + ",\n" +
                 "  \"safety\":\"Software simulator/controller. No medical claims. Consent-based, non-invasive, low-power only. Phone screen is not true infrared and phone is not a physical He-Ne/MBER lab apparatus.\",\n" +
                 "  \"phone_mapping\":{\"camera\":\"visual donor scanner\",\"microphone\":\"acoustic resonance scanner\",\"speaker\":\"stereo wavecode carrier\",\"screen\":\"red/He-Ne proxy\",\"manifest\":\"MBER/Biotron hardware export memory\"},\n" +
-                "  \"session_profile\":{\"visual_donor_pattern\":true,\"acoustic_donor_pattern\":true,\"symbolic_meaning_phrase\":true,\"dynamic_phase_shift_matrix\":true},\n" +
+                "  \"session_profile\":{\"visual_donor_pattern\":true,\"acoustic_donor_pattern\":true,\"symbolic_meaning_phrase\":true,\"dynamic_phase_shift_matrix\":true,\"optical_correlator_emulator\":true},\n" +
+                "  \"gariaev_optical_correlator_emulator\":{\"passes\":[\"dark-frame control\",\"red reference illumination\",\"dim-red reference illumination\",\"7.83 Hz pulse proxy\",\"3/6/9 pulse proxy\"],\"dark_mean\":" + r(o.darkMean) + ",\"red_mean\":" + r(o.redMean) + ",\"dim_red_mean\":" + r(o.dimRedMean) + ",\"schumann_pulse_mean\":" + r(o.schumannPulseMean) + ",\"pulse369_mean\":" + r(o.pulse369Mean) + ",\"speckle_change_proxy\":" + r(o.speckleChange) + ",\"brightness_fluctuation\":" + r(o.brightnessFluctuation) + ",\"edge_fluctuation\":" + r(o.edgeFluctuation) + ",\"color_shift\":" + r(o.colorShift) + ",\"mber_modulation_index\":" + r(o.mberModulationIndex) + ",\"optical_feedback_matrix\":" + doubleArray(o.feedbackMatrix) + "},\n" +
                 "  \"visual_donor_pattern\":{\"width\":" + v.width + ",\"height\":" + v.height + ",\"brightness\":" + r(v.brightness) + ",\"red\":" + r(v.red) + ",\"green\":" + r(v.green) + ",\"blue\":" + r(v.blue) + ",\"edge_density\":" + r(v.edgeDensity) + ",\"symmetry\":" + r(v.symmetry) + ",\"fractal_compression_proxy\":" + r(v.fractalCompressionProxy) + ",\"rgb_histogram_bins\":{\"r\":" + intArray(v.histR) + ",\"g\":" + intArray(v.histG) + ",\"b\":" + intArray(v.histB) + "}},\n" +
                 "  \"acoustic_donor_pattern\":{\"rms\":" + r(a.rms) + ",\"zero_cross_rate\":" + r(a.zeroCrossRate) + ",\"peak_frequencies_hz\":" + doubleArray(a.peaks) + ",\"relative_powers\":" + doubleArray(a.powers) + "},\n" +
                 "  \"symbolic_meaning_phrase\":{\"phrase\":\"" + escape(phrase) + "\",\"symbolic_dna\":\"" + meaningDna + "\"},\n" +
