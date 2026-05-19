@@ -1,0 +1,128 @@
+{
+  "title": "Gariaev GitHub Code Review - Safe Integration Layer",
+  "review_rule": "Do not blindly copy unknown GitHub code. Extract reusable architecture patterns and cite source URLs. Respect license before copying code.",
+  "best_patterns": [
+    {
+      "name": "Frequency registry instead of hard-coded tones",
+      "include": "Centralize 7.83, 528, 6328, 6400, 7000, 384000 metadata, 20-20000 sweep, and discovered frequency markers."
+    },
+    {
+      "name": "Signal lab module",
+      "include": "Keep Goertzel/FFT resonance scan, peak ranking, RMS, zero-crossing, and speaker/mic calibration."
+    },
+    {
+      "name": "Image spectral imprint",
+      "include": "Use RGB histograms, edge density, symmetry, brightness, compression/fractal proxy, and CRC hashes."
+    },
+    {
+      "name": "Reference/object/mirror architecture",
+      "include": "Left channel = object modulation, right channel = phase-shifted mirror/reference feedback, continuous mid reference lattice."
+    },
+    {
+      "name": "Donor imprint manifest",
+      "include": "Export JSON with visual donor pattern, acoustic donor pattern, symbolic phrase DNA, phase-shift matrix, and hardware profile."
+    },
+    {
+      "name": "Hardware export profiles",
+      "include": "Export profiles for He-Ne driver, photodiode reader, coil pad, SDR/MBER surrogate, and sample chamber."
+    },
+    {
+      "name": "Safe import rule",
+      "include": "Do not copy unknown code blindly; extract architecture patterns unless license clearly permits copying."
+    }
+  ],
+  "top_code_results": [
+    {
+      "score": 2,
+      "repo": "1992513/ntdtv",
+      "path": "gb/2023/09/29/a103794616.md",
+      "url": "https://github.com/1992513/ntdtv/blob/51c4159458f456eacb70dd7616f29970b7c23d9f/gb/2023/09/29/a103794616.md",
+      "features": [],
+      "frequencies": [],
+      "snippet": ""
+    },
+    {
+      "score": 2,
+      "repo": "Alemusica/Mirror7",
+      "path": "docs/RESEARCH_SOURCES.md",
+      "url": "https://github.com/Alemusica/Mirror7/blob/3a55174fb6af704386e1ee5b1e78bda246089f8e/docs/RESEARCH_SOURCES.md",
+      "features": [],
+      "frequencies": [],
+      "snippet": ""
+    },
+    {
+      "score": 2,
+      "repo": "AlienLifeShop/TheoriesOfAnything",
+      "path": "J_Ancient_Technology/J1_Energy_Acoustic_Advanced/J_1_05_Sound_Vibration_Creation.md",
+      "url": "https://github.com/AlienLifeShop/TheoriesOfAnything/blob/9c4f8bdc549cc3084daf5f576a3e8a7481071a72/J_Ancient_Technology/J1_Energy_Acoustic_Advanced/J_1_05_Sound_Vibration_Creation.md",
+      "features": [],
+      "frequencies": [],
+      "snippet": ""
+    },
+    {
+      "score": 2,
+      "repo": "VHanma/morphogenetic-encoder-v4",
+      "path": "gariaev_frequency_generator.py",
+      "url": "https://github.com/VHanma/morphogenetic-encoder-v4/blob/4a330691d97afdb562adc898ceeaae8b6bdeed33/gariaev_frequency_generator.py",
+      "features": [],
+      "frequencies": [],
+      "snippet": ""
+    },
+    {
+      "score": 2,
+      "repo": "VHanma/morphogenetic-encoder-v4",
+      "path": "gariaev_superhuman_frequency_matrix.md",
+      "url": "https://github.com/VHanma/morphogenetic-encoder-v4/blob/4a330691d97afdb562adc898ceeaae8b6bdeed33/gariaev_superhuman_frequency_matrix.md",
+      "features": [],
+      "frequencies": [],
+      "snippet": ""
+    },
+    {
+      "score": 2,
+      "repo": "envisioning/research",
+      "path": "content/all/dna-phantom-effect--xenotech.md",
+      "url": "https://github.com/envisioning/research/blob/e7423f13c17c9734b1ec0130c828a254c05bf408/content/all/dna-phantom-effect--xenotech.md",
+      "features": [],
+      "frequencies": [],
+      "snippet": ""
+    },
+    {
+      "score": 2,
+      "repo": "lifeplus1/AET",
+      "path": "_posts/2025-09-07-dr-peter-gariaevs-wave-genetics-dna-and-information-fields.md",
+      "url": "https://github.com/lifeplus1/AET/blob/c9432f790923938fec0cc1cee26befc0b1ffdb28/_posts/2025-09-07-dr-peter-gariaevs-wave-genetics-dna-and-information-fields.md",
+      "features": [],
+      "frequencies": [],
+      "snippet": ""
+    },
+    {
+      "score": 2,
+      "repo": "mahapo/ark-data",
+      "path": "ark/books/Gangstalking/The Notion of Wave-Genome and DNA as Topological Quantum Computer.json",
+      "url": "https://github.com/mahapo/ark-data/blob/a9979e28defe9a65373b13a8350f1a221d6b889f/ark/books/Gangstalking/The%20Notion%20of%20Wave-Genome%20and%20DNA%20as%20Topological%20Quantum%20Computer.json",
+      "features": [],
+      "frequencies": [],
+      "snippet": ""
+    },
+    {
+      "score": 2,
+      "repo": "sarapataryszard80-Rysa/Platforma-Kontaktowa",
+      "path": "4.5 Retrospekcja 6.1 Triady AI.md",
+      "url": "https://github.com/sarapataryszard80-Rysa/Platforma-Kontaktowa/blob/268c3e03086e56106ae44a221d74bc7eb23b4860/4.5%20Retrospekcja%206.1%20Triady%20AI.md",
+      "features": [],
+      "frequencies": [],
+      "snippet": ""
+    },
+    {
+      "score": 2,
+      "repo": "yxf203/PoisonArena",
+      "path": "combat/data/combat_data/single_data/msmarco/P/P5-white-suffix-dcorpus-ans2.json",
+      "url": "https://github.com/yxf203/PoisonArena/blob/001da5aefa1779f3d2cd1495e0a2d9d614a2fa81/combat/data/combat_data/single_data/msmarco/P/P5-white-suffix-dcorpus-ans2.json",
+      "features": [],
+      "frequencies": [],
+      "snippet": ""
+    }
+  ],
+  "feature_counts": {},
+  "frequency_counts": {}
+}

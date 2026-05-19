@@ -146,7 +146,7 @@ public class MainActivity extends Activity {
                 "microphone = acoustic resonance scanner\n" +
                 "speaker = stereo wavecode carrier\n" +
                 "screen = red / He-Ne proxy\n" +
-                "manifest = MBER / Biotron hardware profile\n\n"
+                "manifest = MBER / Biotron hardware profile\nGitHub code review layer = best safe patterns imported into assets/report\n\n"
         );
         scroll.addView(log);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
