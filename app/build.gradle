@@ -10,7 +10,7 @@ android {
         applicationId "org.vhanma.dnaforgemax"
         minSdk 24
         targetSdk 35
-        versionCode 13
-        versionName "12.0-correlator"
+        versionCode 14
+        versionName "13.0-max"
     }
 }

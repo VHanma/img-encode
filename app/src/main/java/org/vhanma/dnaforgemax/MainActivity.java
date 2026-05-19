@@ -1,1278 +1,1016 @@
 package org.vhanma.dnaforgemax;
 
-import android.Manifest;
 import android.app.Activity;
-import android.os.Bundle;
-import android.os.Environment;
-import android.os.Build;
-import android.os.Handler;
-import android.os.Looper;
-import android.content.Intent;
+import android.app.AlertDialog;
 import android.content.ContentValues;
-import android.content.ContentResolver;
-import android.content.pm.PackageManager;
+import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.net.Uri;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.MediaStore;
-import android.view.Gravity;
+import android.view.View;
 import android.widget.Button;
-import android.widget.TextView;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.ScrollView;
+import android.widget.TextView;
+import android.widget.Toast;
 
 import java.io.ByteArrayOutputStream;
-import java.io.DataOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.zip.CRC32;
 import java.util.zip.Deflater;
 
 public class MainActivity extends Activity {
-    private static final int PICK_IMAGE = 777;
-    private static final int REQ_AUDIO = 901;
 
-    LinearLayout root;
-    TextView log;
-    EditText phraseInput;
-    Button imageButton;
-    Button micButton;
-    Button correlatorButton;
-    Button forgeButton;
-    Button playButton;
-    Button shareButton;
-    Button lightButton;
-
-    Bitmap donorBitmap = null;
-    VisualImprint visualImprint = null;
-    AcousticImprint acousticImprint = null;
-    OpticalCorrelator opticalCorrelator = null;
-    Uri lastWavUri = null;
-    Uri lastManifestUri = null;
-
-    Handler handler = new Handler(Looper.getMainLooper());
-    boolean lightPulseOn = false;
-    int lightTick = 0;
-
-    static final int SAMPLE_RATE = 44100;
-    static final double F0 = 6400.0;
-    static final double F1 = 7000.0;
-    static final double BIT_MS = 1.5;
-    static final double HE_NE_HZ = 6328.0;
-    static final double HE_NE_MS = 500.0;
-    static final double AURA_HZ = 528.0;
+    // ── constants ────────────────────────────────────────────────────────────
+    static final int SAMPLE_RATE   = 44100;
+    static final int MAX_DIM       = 512;
+    static final double HE_NE_HZ   = 6328.0;
+    static final double HE_NE_MS   = 632.8;
+    static final double AURA_HZ    = 528.0;
     static final double SCHUMANN_HZ = 7.83;
-    static final double GATE_DEPTH = 0.35;
-    static final int MAX_DIM = 24;
-
-    static final double REFERENCE_HE_NE_AMP = 0.016;
-    static final double REFERENCE_528_AMP = 0.026;
-    static final double REFERENCE_40_AMP = 0.010;
-
-    static final double[] CANDIDATE_FREQS = new double[] {
-            20, 40, 63, 80, 100, 128, 174, 256, 285, 320,
-            396, 417, 432, 528, 639, 741, 852, 963,
-            1111, 1361, 1744, 2048, 3200, 4096,
-            5280, 6328, 6400, 7000, 8192, 10000, 12000, 16000, 20000
-    };
-
-    @Override
-    protected void onCreate(Bundle b) {
-        super.onCreate(b);
-
-        requestAudioPermission();
-
-        root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(24, 24, 24, 24);
-        root.setBackgroundColor(0xff070714);
-
-        TextView title = new TextView(this);
-        title.setText("DNA Forge Max v12\nGariaev Optical Correlator Emulator");
-        title.setTextColor(0xff00e5ff);
-        title.setTextSize(20);
-        title.setGravity(Gravity.CENTER);
-        root.addView(title);
-
-        phraseInput = new EditText(this);
-        phraseInput.setSingleLine(false);
-        phraseInput.setMinLines(2);
-        phraseInput.setText("restore coherence copy this pattern stabilize this geometry resonate with this template");
-        phraseInput.setTextColor(0xffffffff);
-        phraseInput.setHintTextColor(0xff888888);
-        phraseInput.setBackgroundColor(0xff111122);
-        root.addView(phraseInput);
-
-        imageButton = new Button(this);
-        imageButton.setText("1. DONOR IMAGE SCAN");
-        root.addView(imageButton);
-
-        micButton = new Button(this);
-        micButton.setText("2. MIC RESONANCE SCAN");
-        root.addView(micButton);
-
-        correlatorButton = new Button(this);
-        correlatorButton.setText("2B. GARIAEV CORRELATOR SCAN");
-        correlatorButton.setEnabled(false);
-        root.addView(correlatorButton);
-
-        forgeButton = new Button(this);
-        forgeButton.setText("3. FORGE v11 BIOTRON WAV");
-        forgeButton.setEnabled(false);
-        root.addView(forgeButton);
-
-        playButton = new Button(this);
-        playButton.setText("PLAY LAST WAV");
-        playButton.setEnabled(false);
-        root.addView(playButton);
-
-        shareButton = new Button(this);
-        shareButton.setText("SHARE LAST WAV");
-        shareButton.setEnabled(false);
-        root.addView(shareButton);
-
-        lightButton = new Button(this);
-        lightButton.setText("RED / HE-NE LIGHT PROXY");
-        root.addView(lightButton);
-
-        ScrollView scroll = new ScrollView(this);
-        log = new TextView(this);
-        log.setTextColor(0xffb8ffb8);
-        log.setTextSize(13);
-        log.setText(
-                "Ready.\n\n" +
-                "v12 adds multi-pass Gariaev optical-correlator emulation: dark frame, red frame, dim-red frame, 7.83 pulse proxy, 3/6/9 pulse proxy, speckle-change proxy, optical feedback matrix, and MBER modulation index.\n\n" +
-                "Phone mapping:\n" +
-                "camera = donor scanner\n" +
-                "microphone = acoustic resonance scanner\n" +
-                "speaker = stereo wavecode carrier\n" +
-                "screen = red / He-Ne proxy\n" +
-                "manifest = MBER / Biotron hardware profile\n\n"
-        );
-        scroll.addView(log);
-        root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-
-        setContentView(root);
-
-        imageButton.setOnClickListener(v -> openPicker());
-        micButton.setOnClickListener(v -> startMicScan());
-        correlatorButton.setOnClickListener(v -> startCorrelatorScan());
-        forgeButton.setOnClickListener(v -> startForge());
-        playButton.setOnClickListener(v -> playLast());
-        shareButton.setOnClickListener(v -> shareLast());
-        lightButton.setOnClickListener(v -> toggleLightPulse());
-    }
-
-    void requestAudioPermission() {
-        if (Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[] { Manifest.permission.RECORD_AUDIO }, REQ_AUDIO);
-        }
-    }
-
-    void openPicker() {
-        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        i.setType("image/*");
-        i.addCategory(Intent.CATEGORY_OPENABLE);
-        startActivityForResult(i, PICK_IMAGE);
-    }
-
-    @Override
-    protected void onActivityResult(int request, int result, Intent data) {
-        super.onActivityResult(request, result, data);
-
-        if (request == PICK_IMAGE && result == RESULT_OK && data != null) {
-            Uri uri = data.getData();
-
-            new Thread(() -> {
-                try {
-                    say("Reading donor image...");
-                    InputStream in = getContentResolver().openInputStream(uri);
-                    donorBitmap = BitmapFactory.decodeStream(in);
-                    if (in != null) in.close();
-
-                    if (donorBitmap == null) {
-                        say("Could not decode donor image.");
-                        return;
-                    }
-
-                    say("Creating visual donor imprint...");
-                    Bitmap small = shrink(donorBitmap);
-                    byte[] rgba = bitmapToRgba(small);
-                    byte[] compressed = deflate(rgba);
-                    visualImprint = extractVisualImprint(small, rgba, compressed);
-
-                    say("Visual donor scan complete.");
-                    opticalCorrelator = null;
-                    runOnUiThread(() -> correlatorButton.setEnabled(true));
-                    say("Size: " + visualImprint.width + "x" + visualImprint.height);
-                    say("Brightness: " + r(visualImprint.brightness));
-                    say("Symmetry: " + r(visualImprint.symmetry));
-                    say("Edge density: " + r(visualImprint.edgeDensity));
-                    say("Fractal proxy: " + r(visualImprint.fractalCompressionProxy));
-
-                    updateForgeReady();
-                } catch (Exception e) {
-                    say("IMAGE ERROR: " + e.toString());
-                }
-            }).start();
-        }
-    }
-
-    void startMicScan() {
-        requestAudioPermission();
-
-        if (Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            say("Mic permission needed. Tap allow, then press MIC SCAN again.");
-            return;
-        }
-
-        new Thread(() -> {
-            try {
-                runOnUiThread(() -> micButton.setEnabled(false));
-
-                say("Recording 5-second acoustic donor imprint...");
-                acousticImprint = recordAcousticImprint();
-
-                say("Mic resonance scan complete.");
-                say("RMS: " + r(acousticImprint.rms));
-                say("Zero-cross rate: " + r(acousticImprint.zeroCrossRate));
-                say("Top resonance peaks:");
-                for (int i = 0; i < acousticImprint.peaks.length; i++) {
-                    say("  " + (i + 1) + ". " + r(acousticImprint.peaks[i]) + " Hz");
-                }
-
-                updateForgeReady();
-            } catch (Exception e) {
-                say("MIC ERROR: " + e.toString());
-            } finally {
-                runOnUiThread(() -> micButton.setEnabled(true));
-            }
-        }).start();
-    }
-
-
-    void startCorrelatorScan() {
-        if (donorBitmap == null || visualImprint == null) {
-            say("Do DONOR IMAGE SCAN first.");
-            return;
-        }
-
-        new Thread(() -> {
-            try {
-                runOnUiThread(() -> correlatorButton.setEnabled(false));
-
-                say("Starting v12 Gariaev optical-correlator emulator...");
-                say("Pass 1: dark-frame control...");
-                flashRoot(0xff000000, 160);
-                say("Pass 2: red reference illumination...");
-                flashRoot(0xff660000, 160);
-                say("Pass 3: dim-red reference illumination...");
-                flashRoot(0xff220000, 160);
-                say("Pass 4: 7.83 Hz pulse proxy...");
-                flashRoot(0xff440000, 160);
-                say("Pass 5: 3/6/9 pulse proxy...");
-                flashRoot(0xff880000, 160);
-                flashRoot(0xff070714, 80);
-
-                Bitmap small = shrink(donorBitmap);
-                opticalCorrelator = computeOpticalCorrelator(small, visualImprint);
-
-                say("Correlator scan complete.");
-                say("Speckle-change proxy: " + r(opticalCorrelator.speckleChange));
-                say("Brightness fluctuation: " + r(opticalCorrelator.brightnessFluctuation));
-                say("Edge fluctuation: " + r(opticalCorrelator.edgeFluctuation));
-                say("Color shift: " + r(opticalCorrelator.colorShift));
-                say("MBER modulation index: " + r(opticalCorrelator.mberModulationIndex));
-
-                updateForgeReady();
-            } catch (Exception e) {
-                say("CORRELATOR ERROR: " + e.toString());
-            } finally {
-                runOnUiThread(() -> correlatorButton.setEnabled(true));
-            }
-        }).start();
-    }
-
-    void flashRoot(int color, long ms) {
-        runOnUiThread(() -> root.setBackgroundColor(color));
-        try { Thread.sleep(ms); } catch (Exception ignored) {}
-    }
-
-    void updateForgeReady() {
-        runOnUiThread(() -> {
-            boolean ready = donorBitmap != null && visualImprint != null;
-            forgeButton.setEnabled(ready);
-            correlatorButton.setEnabled(ready);
-        });
-    }
-
-    void startForge() {
-        new Thread(() -> {
-            try {
-                runOnUiThread(() -> {
-                    forgeButton.setEnabled(false);
-                    playButton.setEnabled(false);
-                    shareButton.setEnabled(false);
-                });
-
-                if (donorBitmap == null || visualImprint == null) {
-                    say("Pick a donor image first.");
-                    return;
-                }
-
-                if (acousticImprint == null) {
-                    say("No mic scan found. Using default acoustic imprint.");
-                    acousticImprint = AcousticImprint.defaults();
-                }
-
-                String phrase = phraseInput.getText().toString().trim();
-                if (phrase.length() == 0) {
-                    phrase = "restore coherence copy this pattern stabilize this geometry resonate with this template";
-                }
-
-                say("Forging Gariaev-Jiang donor imprint profile...");
-                if (opticalCorrelator == null) {
-                    say("No correlator scan found. Auto-building optical correlator from donor image.");
-                    opticalCorrelator = computeOpticalCorrelator(shrink(donorBitmap), visualImprint);
-                }
-
-                Capsule capsule = buildCapsule(donorBitmap, visualImprint, acousticImprint, opticalCorrelator, phrase);
-
-                int totalFrames = calculateTotalFrames(capsule.capsuleBytes.length, capsule.meaningDna);
-
-                say("Estimated seconds: " + r(totalFrames / (double) SAMPLE_RATE));
-                say("Streaming WAV directly to Music folder...");
-
-                String base = "DNA_Forge_Max_v11_" + System.currentTimeMillis();
-
-                lastWavUri = saveWavToMusic(
-                        base + ".wav",
-                        capsule,
-                        totalFrames
-                );
-
-                lastManifestUri = saveTextToDownloads(
-                        base + "_biotron_imprint.json",
-                        capsule.manifest
-                );
-
-                say("");
-                say("DONE.");
-                say("");
-                say("WAV:");
-                say("Music/DNA_FORGE_MAX/" + base + ".wav");
-                say("");
-                say("Biotron imprint manifest:");
-                say("Downloads/DNA_FORGE_MAX/" + base + "_biotron_imprint.json");
-
-                runOnUiThread(() -> {
-                    playButton.setEnabled(true);
-                    shareButton.setEnabled(true);
-                });
-            } catch (Exception e) {
-                say("FORGE ERROR: " + e.toString());
-            } finally {
-                runOnUiThread(() -> forgeButton.setEnabled(true));
-            }
-        }).start();
-    }
-
-    void say(String s) {
-        runOnUiThread(() -> log.append(s + "\n"));
-    }
-
-    void playLast() {
-        if (lastWavUri == null) {
-            say("No WAV yet.");
-            return;
-        }
-
-        try {
-            Intent i = new Intent(Intent.ACTION_VIEW);
-            i.setDataAndType(lastWavUri, "audio/wav");
-            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            startActivity(i);
-        } catch (Exception e) {
-            say("Could not open audio player. Use Files → Music → DNA_FORGE_MAX.");
-        }
-    }
-
-    void shareLast() {
-        if (lastWavUri == null) {
-            say("No WAV yet.");
-            return;
-        }
-
-        try {
-            Intent send = new Intent(Intent.ACTION_SEND);
-            send.setType("audio/wav");
-            send.putExtra(Intent.EXTRA_STREAM, lastWavUri);
-            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            startActivity(Intent.createChooser(send, "Share DNA Forge v11 WAV"));
-        } catch (Exception e) {
-            say("Could not share WAV.");
-        }
-    }
-
-    void toggleLightPulse() {
-        lightPulseOn = !lightPulseOn;
-
-        if (lightPulseOn) {
-            say("Light proxy ON. Visible red / He-Ne proxy only; phone screen is not true infrared.");
-            runLightPulse();
-        } else {
-            root.setBackgroundColor(0xff070714);
-            say("Light proxy OFF.");
-        }
-    }
-
-    void runLightPulse() {
-        if (!lightPulseOn) return;
-
-        lightTick++;
-        int phase = lightTick % 9;
-
-        if (phase == 2 || phase == 5 || phase == 8) {
-            root.setBackgroundColor(0xffff0000);
-        } else if (phase % 2 == 0) {
-            root.setBackgroundColor(0xff330000);
-        } else {
-            root.setBackgroundColor(0xff070714);
-        }
-
-        handler.postDelayed(this::runLightPulse, 111);
-    }
+    static final double F0         = 6400.0;
+    static final double F1         = 7000.0;
+    static final double BIT_MS     = 1.5;
+    static final double GATE_DEPTH = 0.22;
+
+    // reference wave amplitudes
+    static final double REFERENCE_528_AMP   = 0.055;
+    static final double REFERENCE_HE_NE_AMP = 0.035;
+    static final double REFERENCE_40_AMP    = 0.020;
+
+    // v13 additions
+    static final double LASER_NM          = 632.8;
+    static final double PIXEL_SIZE_UM     = 5.0;
+    static final double PHI               = 1.6180339887498948;
+
+    // full solfeggio stack
+    static final double[] SOLFEGGIO = {396.0, 417.0, 528.0, 639.0, 741.0, 852.0, 963.0};
+
+    // Tesla 3-6-9 harmonic ratios
+    static final double[] TESLA_369 = {3.0, 6.0, 9.0, 18.0, 27.0, 36.0, 54.0, 81.0, 108.0};
+
+    // ── request codes ────────────────────────────────────────────────────────
+    static final int REQ_PICK_IMAGE = 1;
+    static final int REQ_MIC_PERM   = 2;
+    static final int REQ_AUDIO_PERM = 3;
+
+    // ── UI ───────────────────────────────────────────────────────────────────
+    TextView tvTitle, tvStatus, tvResult;
+    Button btnPickImage, btnScanMic, btnScanCorrelator, btnForge, btnReset;
+    ProgressBar progressBar;
+    TextView tvProgress;
+    LinearLayout rootLayout;
+    ScrollView scrollView;
+
+    // ── state ─────────────────────────────────────────────────────────────────
+    Uri        imageUri;
+    Bitmap     imageBitmap;
+    String     sessionName = "";
+
+    VisualImprint   visual;
+    AcousticImprint acoustic;
+    SpeckleCorrelator correlator;
+
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    Handler         uiHandler = new Handler(Looper.getMainLooper());
+
+    // ── data classes ─────────────────────────────────────────────────────────
 
     static class VisualImprint {
-        int width;
-        int height;
-        double brightness;
-        double red;
-        double green;
-        double blue;
-        double edgeDensity;
-        double symmetry;
-        double fractalCompressionProxy;
-        long rawCrc;
-        long compressedCrc;
-        int[] histR;
-        int[] histG;
-        int[] histB;
+        int width, height;
+        double brightness, red, green, blue;
+        double edgeDensity, symmetry, fractalCompressionProxy;
+        int[] histR = new int[8], histG = new int[8], histB = new int[8];
+        long rawCrc, compressedCrc;
+        // v13: spatial frequency centroid (Jiang cross-species donor)
+        double spatialCentroidX, spatialCentroidY;
+        // v13: gariaev speckle correlation coefficient
+        double speckleCorrelation;
     }
 
     static class AcousticImprint {
-        double rms;
-        double zeroCrossRate;
-        double[] peaks;
-        double[] powers;
-
-        static AcousticImprint defaults() {
-            AcousticImprint a = new AcousticImprint();
-            a.rms = 0.0;
-            a.zeroCrossRate = 0.0;
-            a.peaks = new double[] { 528, 6328, 6400, 7000, 7.83, 396, 852, 963 };
-            a.powers = new double[] { 1, 0.9, 0.8, 0.8, 0.7, 0.6, 0.5, 0.5 };
-            return a;
-        }
+        double rms, zeroCrossRate;
+        double[] peaks  = new double[8];
+        double[] powers = new double[8];
+        // v13: dominant resonant frequency (for Jiang carrier)
+        double dominantHz;
     }
 
-
-    static class OpticalCorrelator {
-        double darkMean;
-        double redMean;
-        double dimRedMean;
-        double schumannPulseMean;
-        double pulse369Mean;
-        double speckleChange;
-        double brightnessFluctuation;
-        double edgeFluctuation;
-        double colorShift;
-        double mberModulationIndex;
-        double[] feedbackMatrix;
+    static class SpeckleCorrelator {
+        // v13: proper Gariaev speckle interferometry — cross-correlation of
+        // reference field vs object field brightness patches
+        double[] correlationCoeffs = new double[16]; // 16 quadrant pairs
+        double mberIndex;
+        double[] feedbackMatrix = new double[16];
+        // pass means
+        double darkMean, redMean, dimRedMean, schumannMean, pulse369Mean;
     }
 
     static class Capsule {
-        byte[] capsuleBytes;
-        String manifest;
-        String meaningDna;
-        VisualImprint visual;
-        AcousticImprint acoustic;
-        OpticalCorrelator optical;
-        double[] phaseMatrix;
-
-        Capsule(byte[] capsuleBytes, String manifest, String meaningDna, VisualImprint visual, AcousticImprint acoustic, OpticalCorrelator optical, double[] phaseMatrix) {
-            this.capsuleBytes = capsuleBytes;
-            this.manifest = manifest;
-            this.meaningDna = meaningDna;
-            this.visual = visual;
-            this.acoustic = acoustic;
-            this.optical = optical;
-            this.phaseMatrix = phaseMatrix;
-        }
+        VisualImprint    visual;
+        AcousticImprint  acoustic;
+        SpeckleCorrelator correlator;
+        double[]         phaseMatrix;
+        String           meaningDna;
+        String           phrase;
+        byte[]           capsuleBytes;
+        String           sessionName;
     }
 
-    AcousticImprint recordAcousticImprint() throws Exception {
-        int minBuf = AudioRecord.getMinBufferSize(
-                SAMPLE_RATE,
-                AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_16BIT
-        );
+    // ── lifecycle ─────────────────────────────────────────────────────────────
 
-        if (minBuf < 4096) minBuf = 4096;
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        buildUI();
+    }
 
-        AudioRecord recorder = new AudioRecord(
-                MediaRecorder.AudioSource.MIC,
-                SAMPLE_RATE,
-                AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_16BIT,
-                minBuf * 2
-        );
+    void buildUI() {
+        rootLayout = new LinearLayout(this);
+        rootLayout.setOrientation(LinearLayout.VERTICAL);
+        rootLayout.setPadding(24, 48, 24, 24);
+        rootLayout.setBackgroundColor(0xFF0A0A0F);
 
-        int totalSamples = SAMPLE_RATE * 5;
-        short[] data = new short[totalSamples];
-        short[] buffer = new short[minBuf];
+        scrollView = new ScrollView(this);
+        scrollView.addView(rootLayout);
+        setContentView(scrollView);
 
-        recorder.startRecording();
+        tvTitle = makeText("⬡ DNA FORGE MAX v13", 0xFF00FFAA, 22, true);
+        rootLayout.addView(tvTitle);
 
-        int offset = 0;
-        while (offset < totalSamples) {
-            int want = Math.min(buffer.length, totalSamples - offset);
-            int n = recorder.read(buffer, 0, want);
+        makeText2("Gariaev Speckle · Jiang Kanzhen · Tesla 3-6-9 · Solfeggio · Scalar Mid/Side", 0xFF558877, 13);
 
-            if (n > 0) {
-                System.arraycopy(buffer, 0, data, offset, n);
-                offset += n;
+        rootLayout.addView(makeDivider());
+
+        btnPickImage = makeButton("[ 1 ] LOAD DONOR IMAGE", 0xFF003322, 0xFF00FF88);
+        btnPickImage.setOnClickListener(v -> pickImage());
+
+        btnScanMic = makeButton("[ 2 ] SCAN MIC RESONANCE", 0xFF003322, 0xFF00FF88);
+        btnScanMic.setOnClickListener(v -> startMicScan());
+
+        btnScanCorrelator = makeButton("[ 3 ] SPECKLE CORRELATOR SCAN", 0xFF003322, 0xFF00FF88);
+        btnScanCorrelator.setOnClickListener(v -> startCorrelatorScan());
+
+        btnForge = makeButton("[ 4 ] FORGE SESSION →", 0xFF001A33, 0xFF00CCFF);
+        btnForge.setOnClickListener(v -> showNameDialog());
+
+        rootLayout.addView(makeDivider());
+
+        progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        progressBar.setMax(100);
+        progressBar.setProgress(0);
+        progressBar.setVisibility(View.GONE);
+        rootLayout.addView(progressBar);
+
+        tvProgress = makeText2("", 0xFF888888, 12);
+
+        tvStatus = makeText2("Ready — load donor image to begin", 0xFF667788, 13);
+        tvResult = makeText2("", 0xFF00FFAA, 12);
+
+        btnReset = makeButton("[ RESET ]", 0xFF1A0011, 0xFFFF6688);
+        btnReset.setOnClickListener(v -> resetState());
+        btnReset.setVisibility(View.GONE);
+    }
+
+    // ── UI helpers ────────────────────────────────────────────────────────────
+
+    TextView makeText(String s, int color, int sp, boolean bold) {
+        TextView tv = new TextView(this);
+        tv.setText(s);
+        tv.setTextColor(color);
+        tv.setTextSize(sp);
+        if (bold) tv.setTypeface(null, android.graphics.Typeface.BOLD);
+        tv.setPadding(0, 8, 0, 8);
+        rootLayout.addView(tv);
+        return tv;
+    }
+
+    TextView makeText2(String s, int color, int sp) {
+        TextView tv = new TextView(this);
+        tv.setText(s);
+        tv.setTextColor(color);
+        tv.setTextSize(sp);
+        tv.setPadding(0, 4, 0, 4);
+        rootLayout.addView(tv);
+        return tv;
+    }
+
+    Button makeButton(String label, int bg, int fg) {
+        Button b = new Button(this);
+        b.setText(label);
+        b.setBackgroundColor(bg);
+        b.setTextColor(fg);
+        b.setPadding(16, 20, 16, 20);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, 10, 0, 10);
+        b.setLayoutParams(lp);
+        rootLayout.addView(b);
+        return b;
+    }
+
+    View makeDivider() {
+        View v = new View(this);
+        v.setBackgroundColor(0xFF1A2A1A);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 2);
+        lp.setMargins(0, 16, 0, 16);
+        v.setLayoutParams(lp);
+        return v;
+    }
+
+    void say(String msg) {
+        uiHandler.post(() -> tvStatus.setText(msg));
+    }
+
+    void setProgress(int pct, String label) {
+        uiHandler.post(() -> {
+            progressBar.setProgress(pct);
+            tvProgress.setText(label + " — " + pct + "%");
+        });
+    }
+
+    // ── step 1: pick image ────────────────────────────────────────────────────
+
+    void pickImage() {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("image/*");
+        startActivityForResult(i, REQ_PICK_IMAGE);
+    }
+
+    @Override
+    protected void onActivityResult(int req, int res, Intent data) {
+        super.onActivityResult(req, res, data);
+        if (req == REQ_PICK_IMAGE && res == RESULT_OK && data != null) {
+            imageUri = data.getData();
+            try {
+                InputStream is = getContentResolver().openInputStream(imageUri);
+                imageBitmap = BitmapFactory.decodeStream(is);
+                is.close();
+                visual = null;
+                say("Donor image loaded: " + imageBitmap.getWidth() + "×" + imageBitmap.getHeight());
+                btnPickImage.setTextColor(0xFF00FF88);
+                btnPickImage.setText("✓ DONOR IMAGE LOADED");
+            } catch (Exception e) {
+                say("Image load error: " + e.getMessage());
             }
         }
-
-        recorder.stop();
-        recorder.release();
-
-        return analyzeAudio(data, offset);
     }
 
-    static AcousticImprint analyzeAudio(short[] data, int n) {
-        AcousticImprint out = new AcousticImprint();
+    // ── step 2: mic resonance scan ────────────────────────────────────────────
 
-        double sumSq = 0;
-        int crossings = 0;
+    void startMicScan() {
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{android.Manifest.permission.RECORD_AUDIO}, REQ_AUDIO_PERM);
+            return;
+        }
+        say("Scanning mic resonance — 5 seconds...");
+        progressBar.setVisibility(View.VISIBLE);
+        progressBar.setProgress(0);
+        executor.submit(() -> {
+            acoustic = recordAcousticImprint();
+            uiHandler.post(() -> {
+                btnScanMic.setTextColor(0xFF00FF88);
+                btnScanMic.setText("✓ MIC RESONANCE SCANNED (" +
+                        String.format(Locale.US, "%.1f", acoustic.dominantHz) + " Hz dominant)");
+                progressBar.setVisibility(View.GONE);
+            });
+        });
+    }
 
-        for (int i = 0; i < n; i++) {
-            double x = data[i] / 32768.0;
-            sumSq += x * x;
+    @Override
+    public void onRequestPermissionsResult(int req, String[] perms, int[] grants) {
+        super.onRequestPermissionsResult(req, perms, grants);
+        if (req == REQ_AUDIO_PERM &&
+                grants.length > 0 &&
+                grants[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            startMicScan();
+        }
+    }
 
-            if (i > 0) {
-                if ((data[i - 1] < 0 && data[i] >= 0) || (data[i - 1] >= 0 && data[i] < 0)) {
-                    crossings++;
+    AcousticImprint recordAcousticImprint() {
+        AcousticImprint a = new AcousticImprint();
+        int bufSize = AudioRecord.getMinBufferSize(SAMPLE_RATE,
+                AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
+        bufSize = Math.max(bufSize, SAMPLE_RATE * 2);
+
+        AudioRecord ar = null;
+        try {
+            ar = new AudioRecord(MediaRecorder.AudioSource.MIC, SAMPLE_RATE,
+                    AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufSize);
+            ar.startRecording();
+
+            int totalSamples = SAMPLE_RATE * 5;
+            short[] pcm = new short[totalSamples];
+            int read = 0;
+            int prog = 0;
+            while (read < totalSamples) {
+                int chunk = Math.min(4096, totalSamples - read);
+                int got = ar.read(pcm, read, chunk);
+                if (got <= 0) break;
+                read += got;
+                int newProg = (read * 100) / totalSamples;
+                if (newProg != prog) {
+                    prog = newProg;
+                    setProgress(prog, "Scanning mic");
                 }
             }
+            ar.stop();
+
+            a = analyzeAudio(pcm, read);
+        } catch (Exception e) {
+            a.dominantHz = 528.0;
+        } finally {
+            if (ar != null) try { ar.release(); } catch (Exception ignored) {}
         }
-
-        out.rms = Math.sqrt(sumSq / Math.max(1, n));
-        out.zeroCrossRate = crossings / Math.max(1.0, n);
-
-        double[] powers = new double[CANDIDATE_FREQS.length];
-
-        for (int i = 0; i < CANDIDATE_FREQS.length; i++) {
-            powers[i] = goertzelPower(data, n, CANDIDATE_FREQS[i], SAMPLE_RATE);
-        }
-
-        int peakCount = 8;
-        double[] peaks = new double[peakCount];
-        double[] peakPowers = new double[peakCount];
-        boolean[] used = new boolean[CANDIDATE_FREQS.length];
-
-        for (int k = 0; k < peakCount; k++) {
-            int best = 0;
-            double bestVal = -1;
-
-            for (int i = 0; i < powers.length; i++) {
-                if (!used[i] && powers[i] > bestVal) {
-                    best = i;
-                    bestVal = powers[i];
-                }
-            }
-
-            used[best] = true;
-            peaks[k] = CANDIDATE_FREQS[best];
-            peakPowers[k] = bestVal;
-        }
-
-        out.peaks = peaks;
-        out.powers = normalizePowers(peakPowers);
-
-        return out;
+        return a;
     }
 
-    static double[] normalizePowers(double[] p) {
-        double max = 0;
-        for (double v : p) if (v > max) max = v;
-        if (max <= 0) max = 1;
+    AcousticImprint analyzeAudio(short[] pcm, int n) {
+        AcousticImprint a = new AcousticImprint();
+        if (n <= 0) { a.dominantHz = 528.0; return a; }
 
-        double[] out = new double[p.length];
-        for (int i = 0; i < p.length; i++) {
-            out[i] = p[i] / max;
-        }
-
-        return out;
-    }
-
-    static double goertzelPower(short[] data, int n, double freq, int sr) {
-        double sPrev = 0;
-        double sPrev2 = 0;
-        double normalized = freq / sr;
-        double coeff = 2.0 * Math.cos(2.0 * Math.PI * normalized);
-
+        double sum2 = 0;
+        int zc = 0;
         for (int i = 0; i < n; i++) {
-            double sample = data[i] / 32768.0;
-            double s = sample + coeff * sPrev - sPrev2;
-            sPrev2 = sPrev;
-            sPrev = s;
+            double s = pcm[i] / 32768.0;
+            sum2 += s * s;
+            if (i > 0 && ((pcm[i] >= 0) != (pcm[i - 1] >= 0))) zc++;
+        }
+        a.rms = Math.sqrt(sum2 / n);
+        a.zeroCrossRate = zc / (double) n;
+
+        // Goertzel for 8 detection targets
+        double[] targets = {40, 100, 256, 440, 528, 741, 963, 1111};
+        for (int k = 0; k < 8; k++) {
+            a.peaks[k]  = targets[k];
+            a.powers[k] = goertzelPower(pcm, n, targets[k], SAMPLE_RATE);
         }
 
-        return sPrev2 * sPrev2 + sPrev * sPrev - coeff * sPrev * sPrev2;
+        // find dominant
+        int best = 0;
+        for (int k = 1; k < 8; k++) if (a.powers[k] > a.powers[best]) best = k;
+        a.dominantHz = a.peaks[best];
+
+        // normalize powers
+        double maxP = a.powers[best];
+        if (maxP > 0) for (int k = 0; k < 8; k++) a.powers[k] /= maxP;
+
+        return a;
     }
 
-    Capsule buildCapsule(Bitmap original, VisualImprint visual, AcousticImprint acoustic, OpticalCorrelator optical, String phrase) throws Exception {
-        Bitmap bmp = shrink(original);
-        byte[] rgba = bitmapToRgba(bmp);
-        byte[] compressed = deflate(rgba);
-
-        String meaningDna = phraseToDna(phrase);
-        double[] phaseMatrix = buildPhaseMatrix(visual, acoustic, optical, phrase);
-
-        String embeddedManifest = buildManifest(visual, acoustic, optical, phaseMatrix, compressed.length, 0, meaningDna, phrase, false);
-        byte[] metaBytes = embeddedManifest.getBytes(StandardCharsets.UTF_8);
-
-        CRC32 payloadCrc = new CRC32();
-        payloadCrc.update(compressed);
-
-        ByteArrayOutputStream coreOut = new ByteArrayOutputStream();
-        DataOutputStream dos = new DataOutputStream(coreOut);
-
-        dos.writeBytes("DFMAX11");
-        dos.writeInt(visual.width);
-        dos.writeInt(visual.height);
-        dos.writeByte(4);
-        dos.writeInt(compressed.length);
-        dos.writeInt((int) payloadCrc.getValue());
-        dos.writeShort(metaBytes.length);
-        dos.write(metaBytes);
-        dos.write(compressed);
-        dos.flush();
-
-        byte[] corePacket = coreOut.toByteArray();
-
-        CRC32 reverseCrc = new CRC32();
-        reverseCrc.update(reverse(corePacket));
-
-        ByteArrayOutputStream capsuleOut = new ByteArrayOutputStream();
-        DataOutputStream cds = new DataOutputStream(capsuleOut);
-
-        cds.writeBytes("BIOTRON11");
-        cds.writeInt(corePacket.length);
-        cds.writeInt((int) payloadCrc.getValue());
-        cds.writeInt((int) reverseCrc.getValue());
-
-        int headerChunk = Math.min(128, corePacket.length);
-
-        cds.write(corePacket, 0, headerChunk);
-        cds.write(corePacket, 0, headerChunk);
-        cds.write(corePacket, 0, headerChunk);
-        cds.write(corePacket);
-        cds.flush();
-
-        byte[] capsuleBytes = capsuleOut.toByteArray();
-
-        String finalManifest = buildManifest(
-                visual,
-                acoustic,
-                optical,
-                phaseMatrix,
-                compressed.length,
-                capsuleBytes.length,
-                meaningDna,
-                phrase,
-                true
-        );
-
-        return new Capsule(capsuleBytes, finalManifest, meaningDna, visual, acoustic, optical, phaseMatrix);
+    static double goertzelPower(short[] pcm, int n, double freq, int sr) {
+        double k = freq * n / sr;
+        double w = 2.0 * Math.PI * k / n;
+        double coeff = 2.0 * Math.cos(w);
+        double s0 = 0, s1 = 0, s2;
+        for (int i = 0; i < n; i++) {
+            s2 = s1; s1 = s0;
+            s0 = pcm[i] / 32768.0 + coeff * s1 - s2;
+        }
+        return s0 * s0 + s1 * s1 - coeff * s0 * s1;
     }
 
+    // ── step 3: speckle correlator scan ──────────────────────────────────────
 
-    static OpticalCorrelator computeOpticalCorrelator(Bitmap bmp, VisualImprint v) {
-        OpticalCorrelator o = new OpticalCorrelator();
+    void startCorrelatorScan() {
+        if (imageBitmap == null) {
+            Toast.makeText(this, "Load donor image first", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        say("Running Gariaev speckle interferometry scan...");
+        progressBar.setVisibility(View.VISIBLE);
+        executor.submit(() -> {
+            correlator = computeSpeckleCorrelator(imageBitmap);
+            uiHandler.post(() -> {
+                btnScanCorrelator.setTextColor(0xFF00FF88);
+                btnScanCorrelator.setText("✓ SPECKLE CORRELATOR DONE (MBER=" +
+                        String.format(Locale.US, "%.3f", correlator.mberIndex) + ")");
+                progressBar.setVisibility(View.GONE);
+                say("Speckle correlation complete — " + 16 + " quadrant pairs computed");
+            });
+        });
+    }
 
-        int w = bmp.getWidth();
-        int h = bmp.getHeight();
-        int count = Math.max(1, w * h);
+    SpeckleCorrelator computeSpeckleCorrelator(Bitmap src) {
+        SpeckleCorrelator sc = new SpeckleCorrelator();
+        Bitmap bmp = shrink(src);
+        int w = bmp.getWidth(), h = bmp.getHeight();
 
-        double dark = 0;
-        double red = 0;
-        double dimRed = 0;
-        double schumann = 0;
-        double pulse369 = 0;
-        double speckle = 0;
-        double colorShift = 0;
-        double edgeBase = 0;
-        double edgeRed = 0;
+        // 5-pass pixel sampling (Gariaev emulation: dark/red/dim-red/Schumann/369)
+        // Each pass uses a different spectral weighting on RGB channels
+        double darkSum = 0, redSum = 0, dimSum = 0, schuSum = 0, p369Sum = 0;
+        int count = w * h;
 
+        // Reference field: left half brightness
+        // Object field: right half brightness
+        // Compute cross-correlation coefficient per quadrant (4×4 grid = 16 cells)
+        int qw = Math.max(1, w / 4), qh = Math.max(1, h / 4);
+
+        for (int qi = 0; qi < 4; qi++) {
+            for (int qj = 0; qj < 4; qj++) {
+                int x0 = qi * qw, y0 = qj * qh;
+                int x1 = Math.min(x0 + qw, w), y1 = Math.min(y0 + qh, h);
+                int n = (x1 - x0) * (y1 - y0);
+                if (n <= 0) continue;
+
+                double sumA = 0, sumB = 0, sumA2 = 0, sumB2 = 0, sumAB = 0;
+                for (int y = y0; y < y1; y++) {
+                    for (int x = x0; x < x1; x++) {
+                        int c = bmp.getPixel(x, y);
+                        int r = (c >> 16) & 0xff;
+                        int g = (c >> 8) & 0xff;
+                        int bl = c & 0xff;
+
+                        // reference: luminance weighted toward red (He-Ne 632.8nm)
+                        double ref = (r * 0.60 + g * 0.30 + bl * 0.11) / 255.0;
+                        // object: mirror pixel across vertical axis
+                        int xm = w - 1 - x;
+                        int cm = bmp.getPixel(xm, y);
+                        int rm = (cm >> 16) & 0xff;
+                        int gm = (cm >> 8) & 0xff;
+                        int bm = cm & 0xff;
+                        double obj = (rm * 0.60 + gm * 0.30 + bm * 0.11) / 255.0;
+
+                        sumA += ref; sumB += obj;
+                        sumA2 += ref * ref; sumB2 += obj * obj;
+                        sumAB += ref * obj;
+                    }
+                }
+                double meanA = sumA / n, meanB = sumB / n;
+                double stdA = Math.sqrt(Math.max(0, sumA2 / n - meanA * meanA));
+                double stdB = Math.sqrt(Math.max(0, sumB2 / n - meanB * meanB));
+                double denom = stdA * stdB * n;
+                double corr = denom > 1e-12 ? (sumAB - n * meanA * meanB) / denom : 0.0;
+                sc.correlationCoeffs[qi * 4 + qj] = corr;
+
+                setProgress((qi * 4 + qj + 1) * 5, "Speckle correlator");
+            }
+        }
+
+        // pass means via progressive scan rows
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 int c = bmp.getPixel(x, y);
                 int r = (c >> 16) & 0xff;
                 int g = (c >> 8) & 0xff;
-                int b = c & 0xff;
-
-                double gray = (r + g + b) / 3.0;
-
-                double darkFrame = gray * 0.035;
-                double redFrame = r;
-                double dimRedFrame = r * 0.45;
-
-                double schGate = 0.5 + 0.5 * Math.sin(2.0 * Math.PI * ((x + y + 1) / Math.max(1.0, w + h)));
-                double schFrame = gray * schGate;
-
-                int pulsePhase = (x + y) % 9;
-                double pulseBoost = (pulsePhase == 2 || pulsePhase == 5 || pulsePhase == 8) ? 1.0 : 0.35;
-                double pulseFrame = gray * pulseBoost;
-
-                dark += darkFrame;
-                red += redFrame;
-                dimRed += dimRedFrame;
-                schumann += schFrame;
-                pulse369 += pulseFrame;
-
-                speckle += Math.abs(redFrame - darkFrame) + Math.abs(schFrame - dimRedFrame) + Math.abs(pulseFrame - schFrame);
-                colorShift += (Math.abs(r - g) + Math.abs(r - b)) / 2.0;
-
+                int bl = c & 0xff;
+                double lum = (r + g + bl) / 3.0 / 255.0;
+                darkSum  += lum * 0.05;
+                redSum   += (r / 255.0) * 0.85 + lum * 0.15;
+                dimSum   += (r / 255.0) * 0.45 + lum * 0.55;
+                // Schumann: edge-modulated brightness
                 if (x + 1 < w) {
                     int c2 = bmp.getPixel(x + 1, y);
-                    int r2 = (c2 >> 16) & 0xff;
-                    int g2 = (c2 >> 8) & 0xff;
-                    int b2 = c2 & 0xff;
-                    double gray2 = (r2 + g2 + b2) / 3.0;
-                    edgeBase += Math.abs(gray - gray2);
-                    edgeRed += Math.abs(r - r2);
+                    double lum2 = (((c2 >> 16) & 0xff) + ((c2 >> 8) & 0xff) + (c2 & 0xff)) / 3.0 / 255.0;
+                    schuSum += Math.abs(lum - lum2);
                 }
+                // 369: modulate by golden ratio position
+                double phi_mod = Math.sin(PHI * 2 * Math.PI * (x + y * w) / (double) count);
+                p369Sum += lum * (0.5 + 0.5 * phi_mod);
             }
         }
 
-        o.darkMean = dark / (count * 255.0);
-        o.redMean = red / (count * 255.0);
-        o.dimRedMean = dimRed / (count * 255.0);
-        o.schumannPulseMean = schumann / (count * 255.0);
-        o.pulse369Mean = pulse369 / (count * 255.0);
+        sc.darkMean        = darkSum / count;
+        sc.redMean         = redSum  / count;
+        sc.dimRedMean      = dimSum  / count;
+        sc.schumannMean    = schuSum / Math.max(1, count - h);
+        sc.pulse369Mean    = p369Sum / count;
 
-        o.speckleChange = clamp(speckle / (count * 255.0 * 3.0));
-        o.colorShift = clamp(colorShift / (count * 255.0));
-        o.edgeFluctuation = clamp(Math.abs(edgeRed - edgeBase) / Math.max(1.0, count * 255.0));
-        o.brightnessFluctuation = clamp(
-                standardDeviation(new double[] { o.darkMean, o.redMean, o.dimRedMean, o.schumannPulseMean, o.pulse369Mean })
-        );
-
-        o.mberModulationIndex = clamp(
-                o.speckleChange * 0.34 +
-                o.brightnessFluctuation * 0.22 +
-                o.edgeFluctuation * 0.18 +
-                o.colorShift * 0.16 +
-                v.fractalCompressionProxy * 0.10
-        );
-
-        o.feedbackMatrix = new double[16];
-
-        for (int i = 0; i < o.feedbackMatrix.length; i++) {
-            double spiral = 0.5 + 0.5 * Math.sin((i + 1) * 1.61803398875);
-            double pulse = ((i % 9) == 2 || (i % 9) == 5 || (i % 9) == 8) ? 1.0 : 0.45;
-
-            double value =
-                    o.mberModulationIndex * 0.35 +
-                    o.speckleChange * 0.22 +
-                    o.colorShift * 0.15 +
-                    v.symmetry * 0.12 +
-                    spiral * 0.10 +
-                    pulse * 0.06;
-
-            o.feedbackMatrix[i] = clamp(value) * Math.PI;
-        }
-
-        return o;
-    }
-
-    static double standardDeviation(double[] x) {
+        // MBER modulation index: std of correlationCoeffs
         double mean = 0;
-        for (double v : x) mean += v;
-        mean /= Math.max(1, x.length);
+        for (double cc : sc.correlationCoeffs) mean += cc;
+        mean /= sc.correlationCoeffs.length;
+        double var = 0;
+        for (double cc : sc.correlationCoeffs) var += (cc - mean) * (cc - mean);
+        sc.mberIndex = Math.sqrt(var / sc.correlationCoeffs.length);
 
-        double sum = 0;
-        for (double v : x) {
-            double d = v - mean;
-            sum += d * d;
+        // Build feedback matrix from correlation coefficients (v13: actual cross-corr values)
+        for (int i = 0; i < 16; i++) {
+            double base = sc.correlationCoeffs[i];
+            // Golden ratio spiral phase offset
+            double spiral = Math.atan2(
+                    Math.sin(PHI * Math.PI * i),
+                    Math.cos(PHI * Math.PI * i)
+            );
+            sc.feedbackMatrix[i] = base * Math.PI + spiral * sc.mberIndex;
         }
 
-        return Math.sqrt(sum / Math.max(1, x.length));
+        return sc;
     }
 
-    static double[] buildPhaseMatrix(VisualImprint v, AcousticImprint a, OpticalCorrelator o, String phrase) {
+    // ── step 4: session name dialog ───────────────────────────────────────────
+
+    void showNameDialog() {
+        if (imageBitmap == null) {
+            Toast.makeText(this, "Load a donor image first", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        String ts = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
+        String defaultName = "dna_forge_v13_" + ts;
+
+        AlertDialog.Builder dlg = new AlertDialog.Builder(this);
+        dlg.setTitle("Session Name");
+
+        EditText et = new EditText(this);
+        et.setText(defaultName);
+        et.setSelectAllOnFocus(true);
+        dlg.setView(et);
+
+        dlg.setPositiveButton("FORGE", (d, w) -> {
+            String raw = et.getText().toString().trim();
+            if (raw.isEmpty()) raw = defaultName;
+            sessionName = raw.replaceAll("[^a-zA-Z0-9_\\-]", "_");
+            startForge();
+        });
+        dlg.setNegativeButton("Cancel", null);
+        dlg.show();
+    }
+
+    // ── step 5: forge ─────────────────────────────────────────────────────────
+
+    void startForge() {
+        btnForge.setEnabled(false);
+        progressBar.setVisibility(View.VISIBLE);
+        progressBar.setProgress(0);
+        tvResult.setText("");
+
+        executor.submit(() -> {
+            try {
+                forgeSession();
+            } catch (Exception e) {
+                say("FORGE ERROR: " + e.getMessage());
+                uiHandler.post(() -> {
+                    btnForge.setEnabled(true);
+                    progressBar.setVisibility(View.GONE);
+                });
+            }
+        });
+    }
+
+    void forgeSession() throws Exception {
+        // ── extract visual imprint ──
+        say("Extracting visual donor imprint...");
+        setProgress(5, "Visual analysis");
+        Bitmap bmp = shrink(imageBitmap);
+        byte[] raw        = bitmapToRgba(bmp);
+        byte[] compressed = deflate(raw);
+        VisualImprint vi  = extractVisualImprint(bmp, raw, compressed);
+
+        // v13: spatial frequency centroid
+        computeSpatialCentroid(bmp, vi);
+
+        // ── acoustic imprint (use existing scan or zero-fallback) ──
+        say("Processing acoustic donor imprint...");
+        setProgress(12, "Acoustic layer");
+        if (acoustic == null) {
+            acoustic = new AcousticImprint();
+            acoustic.dominantHz = 528.0;
+            acoustic.peaks  = new double[]{40, 100, 256, 440, 528, 741, 963, 1111};
+            acoustic.powers = new double[]{0.1, 0.2, 0.3, 0.5, 1.0, 0.4, 0.3, 0.2};
+        }
+
+        // ── speckle correlator (use existing or compute now) ──
+        say("Speckle interferometry...");
+        setProgress(20, "Speckle correlator");
+        if (correlator == null) correlator = computeSpeckleCorrelator(imageBitmap);
+
+        // ── phrase to DNA ──
+        String phrase = "DNA FORGE MAX V13 " + sessionName;
+        String dna    = phraseToDna(phrase);
+
+        // ── phase matrix ──
+        say("Building phase matrix...");
+        setProgress(28, "Phase matrix");
+        double[] phaseMatrix = buildPhaseMatrix(vi, acoustic, correlator, dna);
+
+        // ── capsule ──
+        Capsule cap = new Capsule();
+        cap.visual      = vi;
+        cap.acoustic    = acoustic;
+        cap.correlator  = correlator;
+        cap.phaseMatrix = phaseMatrix;
+        cap.meaningDna  = dna;
+        cap.phrase      = phrase;
+        cap.sessionName = sessionName;
+
+        // serialize capsule
+        say("Serializing capsule...");
+        setProgress(32, "Capsule");
+        String manifest = buildManifest(cap, false);
+        byte[] manifestBytes = manifest.getBytes(StandardCharsets.UTF_8);
+
+        // triple-header capsule: BIOTRON13 + DFMAX13 + CRC32
+        ByteArrayOutputStream capsuleBuf = new ByteArrayOutputStream();
+        capsuleBuf.write("BIOTRON13".getBytes(StandardCharsets.US_ASCII));
+        capsuleBuf.write("DFMAX13".getBytes(StandardCharsets.US_ASCII));
+        CRC32 crc = new CRC32();
+        crc.update(manifestBytes);
+        writeLE32(capsuleBuf, (int) crc.getValue());
+        capsuleBuf.write(manifestBytes);
+        cap.capsuleBytes = capsuleBuf.toByteArray();
+
+        // ── WAV synthesis ──
+        say("Synthesizing v13 WAV...");
+        setProgress(35, "WAV synthesis");
+        int totalFrames = calculateTotalFrames(cap.capsuleBytes, dna);
+
+        // write WAV to Music via MediaStore
+        String wavName = sessionName + ".wav";
+        ContentValues cv = new ContentValues();
+        cv.put(MediaStore.Audio.Media.DISPLAY_NAME, wavName);
+        cv.put(MediaStore.Audio.Media.MIME_TYPE, "audio/wav");
+        cv.put(MediaStore.Audio.Media.RELATIVE_PATH, "Music/DNA_FORGE_MAX");
+        Uri wavUri = getContentResolver().insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, cv);
+        if (wavUri == null) throw new Exception("Cannot create WAV in MediaStore");
+
+        try (OutputStream wavOut = getContentResolver().openOutputStream(wavUri)) {
+            writeBiotronWav(wavOut, cap, totalFrames, (pct, label) ->
+                    setProgress(35 + (int)(pct * 0.55), label));
+        }
+
+        // finalize manifest
+        setProgress(92, "Manifest");
+        say("Writing manifest JSON...");
+        String finalManifest = buildManifest(cap, true);
+        String jsonName = sessionName + ".json";
+
+        ContentValues jcv = new ContentValues();
+        jcv.put(MediaStore.Downloads.DISPLAY_NAME, jsonName);
+        jcv.put(MediaStore.Downloads.MIME_TYPE, "application/json");
+        jcv.put(MediaStore.Downloads.RELATIVE_PATH, "Download/DNA_FORGE_MAX");
+        Uri jsonUri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, jcv);
+        if (jsonUri != null) {
+            try (OutputStream jo = getContentResolver().openOutputStream(jsonUri)) {
+                jo.write(finalManifest.getBytes(StandardCharsets.UTF_8));
+            }
+        }
+
+        setProgress(100, "Complete");
+
+        uiHandler.post(() -> {
+            progressBar.setVisibility(View.GONE);
+            tvResult.setText(
+                    "✓ SESSION: " + sessionName + "\n" +
+                    "✓ WAV → Music/DNA_FORGE_MAX/" + wavName + "\n" +
+                    "✓ JSON → Download/DNA_FORGE_MAX/" + jsonName + "\n" +
+                    "✓ Frames: " + totalFrames + " (" +
+                    String.format(Locale.US, "%.1f", totalFrames / (double) SAMPLE_RATE) + "s)\n" +
+                    "✓ Speckle MBER: " + String.format(Locale.US, "%.4f", correlator.mberIndex) + "\n" +
+                    "✓ Spatial centroid: (" +
+                    String.format(Locale.US, "%.3f", vi.spatialCentroidX) + ", " +
+                    String.format(Locale.US, "%.3f", vi.spatialCentroidY) + ")\n" +
+                    "✓ Dominant mic Hz: " + String.format(Locale.US, "%.1f", acoustic.dominantHz)
+            );
+            btnReset.setVisibility(View.VISIBLE);
+            say("v13 forge complete.");
+        });
+    }
+
+    // ── v13: spatial frequency centroid (Jiang donor spectral fingerprint) ───
+
+    void computeSpatialCentroid(Bitmap bmp, VisualImprint vi) {
+        int w = bmp.getWidth(), h = bmp.getHeight();
+        // compute 2D brightness and extract horizontal / vertical projection FFT centroid
+        double[] rowMean = new double[h];
+        double[] colMean = new double[w];
+        for (int y = 0; y < h; y++) {
+            double s = 0;
+            for (int x = 0; x < w; x++) {
+                int c = bmp.getPixel(x, y);
+                s += ((c >> 16) & 0xff) + ((c >> 8) & 0xff) + (c & 0xff);
+            }
+            rowMean[y] = s / (3.0 * w * 255.0);
+        }
+        for (int x = 0; x < w; x++) {
+            double s = 0;
+            for (int y = 0; y < h; y++) {
+                int c = bmp.getPixel(x, y);
+                s += ((c >> 16) & 0xff) + ((c >> 8) & 0xff) + (c & 0xff);
+            }
+            colMean[x] = s / (3.0 * h * 255.0);
+        }
+
+        // spectral centroid of projection (weighted mean frequency)
+        double numX = 0, denX = 0;
+        for (int k = 1; k < w; k++) {
+            // DFT magnitude at frequency k/w via Goertzel-style
+            double re = 0, im = 0;
+            for (int x = 0; x < w; x++) {
+                double angle = 2.0 * Math.PI * k * x / w;
+                re += colMean[x] * Math.cos(angle);
+                im += colMean[x] * Math.sin(angle);
+            }
+            double mag = Math.sqrt(re * re + im * im);
+            numX += k * mag; denX += mag;
+        }
+        double numY = 0, denY = 0;
+        for (int k = 1; k < h; k++) {
+            double re = 0, im = 0;
+            for (int y = 0; y < h; y++) {
+                double angle = 2.0 * Math.PI * k * y / h;
+                re += rowMean[y] * Math.cos(angle);
+                im += rowMean[y] * Math.sin(angle);
+            }
+            double mag = Math.sqrt(re * re + im * im);
+            numY += k * mag; denY += mag;
+        }
+        vi.spatialCentroidX = denX > 0 ? numX / denX / w : 0.5;
+        vi.spatialCentroidY = denY > 0 ? numY / denY / h : 0.5;
+    }
+
+    // ── phase matrix ─────────────────────────────────────────────────────────
+
+    double[] buildPhaseMatrix(VisualImprint vi, AcousticImprint a,
+                               SpeckleCorrelator sc, String dna) {
         double[] m = new double[16];
 
-        CRC32 crc = new CRC32();
-        crc.update(phrase.getBytes(StandardCharsets.UTF_8));
-        long phraseCrc = crc.getValue();
+        // hash the phrase/dna for symbolic contribution
+        int hash = dna.hashCode();
+        for (int i = 0; i < 16; i++) {
+            double audio   = a.powers[i % 8] * Math.PI;
+            double color   = ((vi.histR[i % 8] + vi.histG[i % 8] + vi.histB[i % 8])
+                              / Math.max(1.0, vi.width * vi.height * 3.0)) * Math.PI;
+            double geom    = (vi.edgeDensity + vi.symmetry) * Math.PI / 2.0;
+            double symbolic = ((hash >> (i & 0x1F)) & 0x1) * Math.PI;
+            double speckle  = sc.feedbackMatrix[i];
+            double spatial  = (vi.spatialCentroidX + vi.spatialCentroidY) * Math.PI;
 
-        for (int i = 0; i < m.length; i++) {
-            double audio = a.peaks[i % a.peaks.length] / 20000.0;
-            double color = (i % 3 == 0) ? v.red : (i % 3 == 1) ? v.green : v.blue;
-            double geom = (v.symmetry + v.edgeDensity + v.brightness) / 3.0;
-            double code = ((phraseCrc >> (i % 24)) & 0xff) / 255.0;
-            double optical = o.feedbackMatrix[i % o.feedbackMatrix.length] / Math.PI;
-
-            m[i] = (audio * 0.25 + color * 0.18 + geom * 0.18 + code * 0.12 + optical * 0.27) * Math.PI;
+            // weights: speckle=0.25, audio=0.20, spatial=0.18, color=0.15, geom=0.12, symbolic=0.10
+            m[i] = 0.25 * speckle + 0.20 * audio + 0.18 * spatial
+                 + 0.15 * color  + 0.12 * geom  + 0.10 * symbolic;
         }
-
         return m;
     }
 
-    Uri saveWavToMusic(String displayName, Capsule capsule, int totalFrames) throws Exception {
-        ContentResolver resolver = getContentResolver();
+    // ── WAV writing ───────────────────────────────────────────────────────────
 
-        ContentValues values = new ContentValues();
-        values.put(MediaStore.Audio.Media.DISPLAY_NAME, displayName);
-        values.put(MediaStore.Audio.Media.MIME_TYPE, "audio/wav");
+    interface ProgressCallback { void report(double pct, String label); }
 
-        if (Build.VERSION.SDK_INT >= 29) {
-            values.put(MediaStore.Audio.Media.RELATIVE_PATH, Environment.DIRECTORY_MUSIC + "/DNA_FORGE_MAX");
-            values.put(MediaStore.Audio.Media.IS_PENDING, 1);
-        }
-
-        Uri uri = resolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values);
-        if (uri == null) throw new Exception("Could not create WAV in Music.");
-
-        OutputStream out = resolver.openOutputStream(uri);
-        if (out == null) throw new Exception("Could not open WAV output stream.");
-
-        writeBiotronWav(out, capsule, totalFrames);
-
-        out.flush();
-        out.close();
-
-        if (Build.VERSION.SDK_INT >= 29) {
-            ContentValues done = new ContentValues();
-            done.put(MediaStore.Audio.Media.IS_PENDING, 0);
-            resolver.update(uri, done, null, null);
-        }
-
-        return uri;
-    }
-
-    Uri saveTextToDownloads(String displayName, String text) throws Exception {
-        if (Build.VERSION.SDK_INT < 29) return null;
-
-        ContentResolver resolver = getContentResolver();
-
-        ContentValues values = new ContentValues();
-        values.put(MediaStore.Downloads.DISPLAY_NAME, displayName);
-        values.put(MediaStore.Downloads.MIME_TYPE, "application/json");
-        values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/DNA_FORGE_MAX");
-        values.put(MediaStore.Downloads.IS_PENDING, 1);
-
-        Uri uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
-        if (uri == null) throw new Exception("Could not create manifest.");
-
-        OutputStream out = resolver.openOutputStream(uri);
-        if (out == null) throw new Exception("Could not open manifest stream.");
-
-        out.write(text.getBytes(StandardCharsets.UTF_8));
-        out.flush();
-        out.close();
-
-        ContentValues done = new ContentValues();
-        done.put(MediaStore.Downloads.IS_PENDING, 0);
-        resolver.update(uri, done, null, null);
-
-        return uri;
-    }
-
-    static Bitmap shrink(Bitmap src) {
-        int w = src.getWidth();
-        int h = src.getHeight();
-
-        double scale = Math.min((double) MAX_DIM / w, (double) MAX_DIM / h);
-        if (scale >= 1.0) return src.copy(Bitmap.Config.ARGB_8888, false);
-
-        int nw = Math.max(1, (int) Math.round(w * scale));
-        int nh = Math.max(1, (int) Math.round(h * scale));
-
-        return Bitmap.createScaledBitmap(src, nw, nh, true);
-    }
-
-    static byte[] bitmapToRgba(Bitmap bmp) throws Exception {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-
-        for (int y = 0; y < bmp.getHeight(); y++) {
-            for (int x = 0; x < bmp.getWidth(); x++) {
-                int c = bmp.getPixel(x, y);
-                out.write((c >> 16) & 0xff);
-                out.write((c >> 8) & 0xff);
-                out.write(c & 0xff);
-                out.write((c >> 24) & 0xff);
-            }
-        }
-
-        return out.toByteArray();
-    }
-
-    static byte[] deflate(byte[] raw) throws Exception {
-        Deflater def = new Deflater(9);
-        def.setInput(raw);
-        def.finish();
-
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        byte[] buf = new byte[4096];
-
-        while (!def.finished()) {
-            int n = def.deflate(buf);
-            out.write(buf, 0, n);
-        }
-
-        def.end();
-        return out.toByteArray();
-    }
-
-    static VisualImprint extractVisualImprint(Bitmap bmp, byte[] raw, byte[] compressed) {
-        VisualImprint g = new VisualImprint();
-        g.width = bmp.getWidth();
-        g.height = bmp.getHeight();
-
-        g.histR = new int[8];
-        g.histG = new int[8];
-        g.histB = new int[8];
-
-        int w = g.width;
-        int h = g.height;
-        int count = Math.max(1, w * h);
-
-        double brightness = 0;
-        double red = 0;
-        double green = 0;
-        double blue = 0;
-        double edge = 0;
-        double mirrorError = 0;
-
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                int c = bmp.getPixel(x, y);
-                int r = (c >> 16) & 0xff;
-                int gg = (c >> 8) & 0xff;
-                int b = c & 0xff;
-
-                g.histR[Math.min(7, r / 32)]++;
-                g.histG[Math.min(7, gg / 32)]++;
-                g.histB[Math.min(7, b / 32)]++;
-
-                double gray = (r + gg + b) / 3.0;
-
-                brightness += gray;
-                red += r;
-                green += gg;
-                blue += b;
-
-                if (x + 1 < w) {
-                    int c2 = bmp.getPixel(x + 1, y);
-                    int r2 = (c2 >> 16) & 0xff;
-                    int g2 = (c2 >> 8) & 0xff;
-                    int b2 = c2 & 0xff;
-                    edge += Math.abs(gray - ((r2 + g2 + b2) / 3.0));
-                }
-
-                if (y + 1 < h) {
-                    int c3 = bmp.getPixel(x, y + 1);
-                    int r3 = (c3 >> 16) & 0xff;
-                    int g3 = (c3 >> 8) & 0xff;
-                    int b3 = c3 & 0xff;
-                    edge += Math.abs(gray - ((r3 + g3 + b3) / 3.0));
-                }
-
-                int cm = bmp.getPixel(w - 1 - x, y);
-                int rm = (cm >> 16) & 0xff;
-                int gm = (cm >> 8) & 0xff;
-                int bm = cm & 0xff;
-                double grayMirror = (rm + gm + bm) / 3.0;
-
-                mirrorError += Math.abs(gray - grayMirror);
-            }
-        }
-
-        g.brightness = brightness / (count * 255.0);
-        g.red = red / (count * 255.0);
-        g.green = green / (count * 255.0);
-        g.blue = blue / (count * 255.0);
-        g.edgeDensity = edge / Math.max(1.0, count * 255.0 * 2.0);
-        g.symmetry = 1.0 - (mirrorError / Math.max(1.0, count * 255.0));
-        g.fractalCompressionProxy = compressed.length / Math.max(1.0, raw.length);
-
-        CRC32 rawCrc = new CRC32();
-        rawCrc.update(raw);
-        g.rawCrc = rawCrc.getValue();
-
-        CRC32 compCrc = new CRC32();
-        compCrc.update(compressed);
-        g.compressedCrc = compCrc.getValue();
-
-        return g;
-    }
-
-    static String phraseToDna(String phrase) {
-        byte[] bytes = phrase.getBytes(StandardCharsets.UTF_8);
-        StringBuilder dna = new StringBuilder();
-
-        for (byte b : bytes) {
-            for (int i = 6; i >= 0; i -= 2) {
-                int pair = (b >> i) & 0x03;
-                if (pair == 0) dna.append('A');
-                else if (pair == 1) dna.append('C');
-                else if (pair == 2) dna.append('G');
-                else dna.append('T');
-            }
-        }
-
-        return dna.toString();
-    }
-
-    static int calculateTotalFrames(int capsuleBytes, String dna) {
-        int total = 0;
-
-        total += frames(250);
-        total += frames(500);
-        total += frames(HE_NE_MS);
-        total += frames(300);
-        total += frames(300);
-        total += opticalCorrelatorFrames();
-        total += visualImprintFrames();
-        total += acousticImprintFrames();
-        total += hermesFrames();
-        total += meaningFrames(dna);
-        total += capsuleBytes * 8 * bitFrames();
-        total += frames(500);
-        total += frames(250);
-
-        return total;
-    }
-
-    static int frames(double ms) {
-        return (int) (SAMPLE_RATE * ms / 1000.0);
-    }
-
-    static int bitFrames() {
-        return Math.max(60, frames(BIT_MS));
-    }
-
-    static int opticalCorrelatorFrames() {
-        return 16 * (frames(24) + frames(3));
-    }
-
-    static int visualImprintFrames() {
-        return 24 * (frames(12) + frames(2));
-    }
-
-    static int acousticImprintFrames() {
-        return 8 * (frames(80) + frames(10));
-    }
-
-    static int hermesFrames() {
-        return frames(888);
-    }
-
-    static int meaningFrames(String dna) {
-        int max = Math.min(dna.length(), 240);
-        int total = 0;
-
-        for (int i = 0; i < max; i++) {
-            char c = dna.charAt(i);
-            double ms = (c == 'C' || c == 'T') ? 4.854 : 3.0;
-            total += frames(ms);
-            total += frames(2.0);
-        }
-
-        total += frames(60);
-        return total;
-    }
-
-    void writeBiotronWav(OutputStream out, Capsule capsule, int totalFrames) throws Exception {
+    void writeBiotronWav(OutputStream out, Capsule cap, int totalFrames,
+                         ProgressCallback cb) throws Exception {
         writeStereoWavHeader(out, totalFrames);
+        SampleWriter sw = new SampleWriter(out, cap.phaseMatrix);
 
-        SampleWriter sw = new SampleWriter(out, capsule.phaseMatrix);
-
-        say("Writing MBER/Rife open sweep...");
+        cb.report(0.00, "Opening sweep");
+        say("Writing opening sweep...");
         streamStereoSilence(sw, 250);
         streamStereoSweep(sw, 20, 20000, 500, 0.18, false);
 
-        say("Writing Gariaev optical-correlator sync...");
+        cb.report(0.04, "He-Ne sync");
+        say("Writing Gariaev He-Ne sync...");
         streamStereoTone(sw, HE_NE_HZ, HE_NE_MS, 0.38, 0.38, 0, Math.PI / 2.0);
         streamStereoSweep(sw, F0, F1, 300, 0.30, true);
         streamSchumannPulseWindow(sw, 300);
 
-        say("Writing v12 optical feedback matrix layer...");
-        streamOpticalFeedbackLayer(sw, capsule.optical);
+        cb.report(0.08, "Solfeggio stack");
+        say("Writing full Solfeggio stack...");
+        streamFullSolfeggioStack(sw, cap.visual);
 
+        cb.report(0.16, "Tesla 3-6-9");
+        say("Writing Tesla 3-6-9 harmonic grid...");
+        streamTesla369Grid(sw, cap.visual, cap.correlator);
+
+        cb.report(0.24, "Gariaev speckle feedback");
+        say("Writing Gariaev speckle feedback matrix layer...");
+        streamSpeckleFeedbackLayer(sw, cap.correlator);
+
+        cb.report(0.34, "Jiang cross-species");
+        say("Writing Jiang Kanzhen cross-species morphic layer...");
+        streamJiangMorphicLayer(sw, cap.visual, cap.acoustic);
+
+        cb.report(0.44, "Scalar mid/side");
+        say("Writing scalar standing-wave mid/side layer...");
+        streamScalarMidSide(sw, cap.visual, cap.correlator);
+
+        cb.report(0.54, "Visual imprint");
         say("Writing visual donor imprint layer...");
-        streamVisualImprint(sw, capsule.visual);
+        streamVisualImprint(sw, cap.visual);
 
+        cb.report(0.62, "Acoustic imprint");
         say("Writing acoustic donor imprint layer...");
-        streamAcousticImprint(sw, capsule.acoustic);
+        streamAcousticImprint(sw, cap.acoustic);
 
+        cb.report(0.70, "Hermes ancient code");
         say("Writing Hermes ancient-code grammar layer...");
-        streamHermesAncientCodeLayer(sw, capsule.visual);
+        streamHermesAncientCodeLayer(sw, cap.visual);
 
+        cb.report(0.78, "DNA rhythm");
         say("Writing symbolic DNA phrase layer...");
-        streamMeaningDnaRhythm(sw, capsule.meaningDna);
+        streamMeaningDnaRhythm(sw, cap.meaningDna);
 
-        say("Writing donor capsule object wave + phase-shift matrix...");
-        streamPacketBits(sw, capsule.capsuleBytes);
+        cb.report(0.86, "Packet bits");
+        say("Writing donor capsule phase-matrix bits...");
+        streamPacketBits(sw, cap.capsuleBytes);
 
+        cb.report(0.94, "Closing sweep");
         say("Writing closing sweep...");
         streamStereoSweep(sw, 20000, 20, 500, 0.18, false);
         streamStereoSilence(sw, 250);
 
-        if (sw.framesWritten != totalFrames) {
-            say("Frame note: expected " + totalFrames + " wrote " + sw.framesWritten);
+        cb.report(1.0, "Done");
+    }
+
+    // ── v13 NEW layer: full Solfeggio stack ──────────────────────────────────
+    // All 7 frequencies simultaneously, amplitudes modulated by visual histogram
+
+    static void streamFullSolfeggioStack(SampleWriter sw, VisualImprint v) throws Exception {
+        int n = frames(1200); // 1.2 seconds
+        int count = Math.max(1, v.width * v.height);
+        double[] amps = new double[7];
+        for (int i = 0; i < 7; i++) {
+            int bin = i % 8;
+            amps[i] = 0.06 + 0.16 * ((v.histR[bin] + v.histG[bin] + v.histB[bin]) / (3.0 * count));
+        }
+
+        for (int s = 0; s < n; s++) {
+            double t = s / (double) SAMPLE_RATE;
+            double env = solfeggioEnvelope(s, n);
+            double left = 0, right = 0;
+
+            for (int i = 0; i < 7; i++) {
+                double freq = SOLFEGGIO[i];
+                double wave = Math.sin(2.0 * Math.PI * freq * t) * amps[i] * env;
+                // ascending on left, descending on right (mirror gate principle)
+                left  += wave;
+                right += Math.sin(2.0 * Math.PI * SOLFEGGIO[6 - i] * t + Math.PI / 2.0) * amps[6 - i] * env;
+            }
+            writeReferenceLockedFrame(sw, left * 0.7, right * 0.7);
         }
     }
 
-    static class SampleWriter {
-        OutputStream out;
-        int framesWritten = 0;
-        double[] phaseMatrix;
+    static double solfeggioEnvelope(int s, int n) {
+        int fade = Math.max(1, frames(80));
+        if (s < fade) return s / (double) fade;
+        if (s > n - fade) return (n - s) / (double) fade;
+        return 1.0;
+    }
 
-        SampleWriter(OutputStream out, double[] phaseMatrix) {
-            this.out = out;
-            this.phaseMatrix = phaseMatrix;
+    // ── v13 NEW layer: Tesla 3-6-9 harmonic resonance grid ───────────────────
+    // Proper overtone stack: base tone × Tesla ratios, phase-coupled per triplet
+
+    static void streamTesla369Grid(SampleWriter sw, VisualImprint v,
+                                    SpeckleCorrelator sc) throws Exception {
+        int n = frames(900);
+        double baseTone = 108.0; // 108 Hz = 9×12 — fundamental Tesla harmonic
+
+        // phase coupling: each group of 3 ratios shares a phase offset from speckle
+        double phaseA = sc.feedbackMatrix[0];
+        double phaseB = sc.feedbackMatrix[3];
+        double phaseC = sc.feedbackMatrix[6];
+
+        for (int s = 0; s < n; s++) {
+            double t = s / (double) SAMPLE_RATE;
+            double env = solfeggioEnvelope(s, n);
+            double left = 0, right = 0;
+
+            for (int k = 0; k < TESLA_369.length; k++) {
+                double freq = baseTone * TESLA_369[k];
+                if (freq > 18000) continue; // keep in audible range
+
+                double phase = (k % 3 == 0) ? phaseA : (k % 3 == 1) ? phaseB : phaseC;
+                double amp = 0.08 / (1.0 + k * 0.4); // harmonic rolloff
+
+                // Left: object wave (forward propagating)
+                left  += Math.sin(2.0 * Math.PI * freq * t + phase) * amp;
+                // Right: conjugate wave (phase-reversed return)
+                right += Math.sin(2.0 * Math.PI * freq * t - phase + Math.PI) * amp;
+            }
+            writeReferenceLockedFrame(sw, left * env, right * env);
         }
     }
 
-    static void writeReferenceLockedFrame(SampleWriter sw, double objectLeft, double objectRight) throws Exception {
-        double t = sw.framesWritten / (double) SAMPLE_RATE;
+    // ── v13 NEW layer: Gariaev speckle feedback (upgraded from v12 optical) ──
+    // Uses actual cross-correlation coefficients, not just brightness proxy
 
-        double reference =
-                Math.sin(2.0 * Math.PI * AURA_HZ * t) * REFERENCE_528_AMP +
-                Math.sin(2.0 * Math.PI * HE_NE_HZ * t) * REFERENCE_HE_NE_AMP +
-                Math.sin(2.0 * Math.PI * 40.0 * t) * REFERENCE_40_AMP;
-
-        double gateWave = (1.0 + Math.sin(2.0 * Math.PI * SCHUMANN_HZ * t)) / 2.0;
-        double gateEnv = 1.0 - GATE_DEPTH + GATE_DEPTH * gateWave;
-
-        double pulse = 1.0;
-        int beat = ((int) (t * 9.0)) % 9;
-        if (beat == 2 || beat == 5 || beat == 8) pulse = 1.08;
-
-        double left = clamp(reference + objectLeft * gateEnv * pulse);
-        double right = clamp(reference + objectRight * gateEnv * pulse);
-
-        writeLE16(sw.out, (int) (left * 32767.0));
-        writeLE16(sw.out, (int) (right * 32767.0));
-
-        sw.framesWritten++;
-    }
-
-    static void streamStereoSilence(SampleWriter sw, double ms) throws Exception {
-        int n = frames(ms);
-        for (int i = 0; i < n; i++) writeReferenceLockedFrame(sw, 0, 0);
-    }
-
-    static void streamStereoTone(
-            SampleWriter sw,
-            double freq,
-            double ms,
-            double ampL,
-            double ampR,
-            double phaseL,
-            double phaseR
-    ) throws Exception {
-        int n = frames(ms);
-        int fade = Math.max(1, frames(5));
-
-        for (int i = 0; i < n; i++) {
-            double env = 1.0;
-            if (i < fade) env = i / (double) fade;
-            else if (i > n - fade) env = Math.max(0.0, (n - i) / (double) fade);
-
-            double t = i / (double) SAMPLE_RATE;
-            double l = Math.sin(2.0 * Math.PI * freq * t + phaseL) * ampL * env;
-            double r = Math.sin(2.0 * Math.PI * freq * t + phaseR) * ampR * env;
-
-            writeReferenceLockedFrame(sw, l, r);
-        }
-    }
-
-    static void streamStereoSweep(SampleWriter sw, double startHz, double endHz, double ms, double amp, boolean oppositePhase) throws Exception {
-        int n = frames(ms);
-        double phaseL = 0.0;
-        double phaseR = oppositePhase ? Math.PI : Math.PI / 2.0;
-
-        for (int i = 0; i < n; i++) {
-            double frac = i / Math.max(1.0, n - 1.0);
-            double freq = startHz + (endHz - startHz) * frac;
-            double step = 2.0 * Math.PI * freq / SAMPLE_RATE;
-
-            writeReferenceLockedFrame(sw, Math.sin(phaseL) * amp, Math.sin(phaseR) * amp);
-
-            phaseL = (phaseL + step) % (2.0 * Math.PI);
-            phaseR = (phaseR + step) % (2.0 * Math.PI);
-        }
-    }
-
-    static void streamSchumannPulseWindow(SampleWriter sw, double ms) throws Exception {
-        int n = frames(ms);
-
-        for (int i = 0; i < n; i++) {
-            double t = i / (double) SAMPLE_RATE;
-            double gate = (1.0 + Math.sin(2.0 * Math.PI * SCHUMANN_HZ * t)) / 2.0;
-            double carrier = Math.sin(2.0 * Math.PI * 528.0 * t) * 0.15 * gate;
-            writeReferenceLockedFrame(sw, carrier, -carrier);
-        }
-    }
-
-
-    static void streamOpticalFeedbackLayer(SampleWriter sw, OpticalCorrelator o) throws Exception {
-        double[] carriers = new double[] {
-                6328.0, 6400.0, 7000.0, 528.0,
-                396.0, 417.0, 432.0, 741.0,
-                852.0, 963.0, 1111.0, 1361.0,
+    static void streamSpeckleFeedbackLayer(SampleWriter sw, SpeckleCorrelator sc) throws Exception {
+        double[] carriers = {
+                6328.0, 6400.0, 7000.0,  528.0,
+                 396.0,  417.0,  432.0,  741.0,
+                 852.0,  963.0, 1111.0, 1361.0,
                 1744.0, 3200.0, 4096.0, 5280.0
         };
 
-        for (int i = 0; i < o.feedbackMatrix.length; i++) {
-            double matrix = o.feedbackMatrix[i] / Math.PI;
-            double freq = carriers[i % carriers.length] + (i * 7.83);
-            double amp = 0.06 + 0.22 * clamp(matrix);
-            double rightPhase = o.feedbackMatrix[i];
+        for (int i = 0; i < 16; i++) {
+            // v13: amplitude driven by real cross-correlation coefficient
+            double corr = Math.abs(sc.correlationCoeffs[i]);
+            double amp  = 0.05 + 0.25 * corr;
+            double freq = carriers[i] + (i * 7.83);
+            double rightPhase = sc.feedbackMatrix[i];
 
-            streamStereoTone(sw, freq, 24.0, amp, amp * 0.78, 0.0, rightPhase);
+            streamStereoTone(sw, freq, 30.0, amp, amp * 0.80, 0.0, rightPhase);
             streamStereoSilence(sw, 3.0);
         }
     }
 
+    // ── v13 NEW layer: Jiang Kanzhen cross-species morphic transfer ───────────
+    // Donor spectral centroid drives carrier; acoustic dominant Hz = recipient target
+
+    static void streamJiangMorphicLayer(SampleWriter sw, VisualImprint v,
+                                         AcousticImprint a) throws Exception {
+        int n = frames(1500);
+
+        // Donor carrier: spatial frequency centroid → Hz mapping
+        // centroid in [0..1] maps log to [80..8000] Hz
+        double donorCarrier = 80.0 * Math.pow(100.0, v.spatialCentroidX);
+        donorCarrier = Math.min(8000, Math.max(80, donorCarrier));
+
+        // Recipient target: dominant mic frequency
+        double recipientHz = a.dominantHz;
+
+        // Morphic modulation: AM carrier frequency slides from donor toward recipient
+        for (int s = 0; s < n; s++) {
+            double t = s / (double) SAMPLE_RATE;
+            double frac = s / (double) n;
+            double env = solfeggioEnvelope(s, n);
+
+            // Carrier interpolates from donorCarrier to recipientHz over the layer
+            double freq = donorCarrier + (recipientHz - donorCarrier) * frac;
+
+            // Modulation index from MBER
+            double mod = 1.0 + 0.35 * sw.phaseMatrix[s % sw.phaseMatrix.length];
+            double carrier = Math.sin(2.0 * Math.PI * freq * t) * mod;
+
+            // Sideband envelope at 7.83 Hz (Schumann gating — field coherence)
+            double gate = 0.5 + 0.5 * Math.sin(2.0 * Math.PI * SCHUMANN_HZ * t);
+
+            double left  = carrier * gate * 0.22 * env;
+            double right = Math.sin(2.0 * Math.PI * recipientHz * t + Math.PI / 2.0)
+                           * gate * 0.18 * env;
+
+            writeReferenceLockedFrame(sw, left, right);
+        }
+    }
+
+    // ── v13 NEW layer: scalar standing-wave true mid/side ─────────────────────
+    // Mid = sum (object + reference), Side = difference (phase-conjugate return)
+
+    static void streamScalarMidSide(SampleWriter sw, VisualImprint v,
+                                     SpeckleCorrelator sc) throws Exception {
+        int n = frames(800);
+
+        // Standing wave node frequency: derived from image dimensions
+        double nodeHz = 1.0 / (v.width / (double) SAMPLE_RATE * 2.0);
+        nodeHz = Math.min(3000, Math.max(40, nodeHz));
+
+        double mberMod = sc.mberIndex;
+
+        for (int s = 0; s < n; s++) {
+            double t = s / (double) SAMPLE_RATE;
+            double env = solfeggioEnvelope(s, n);
+
+            // Object wave (forward): fundamental + solfeggio overtone
+            double obj = Math.sin(2.0 * Math.PI * nodeHz * t) * 0.25
+                       + Math.sin(2.0 * Math.PI * 528.0 * t) * 0.12 * mberMod;
+
+            // Reference wave (backward conjugate): phase-flipped, amplitude modulated by speckle
+            double refWave = Math.sin(2.0 * Math.PI * nodeHz * t + Math.PI) * 0.25
+                           * (1.0 + 0.4 * mberMod);
+
+            // Mid/Side
+            double mid  = (obj + refWave) * 0.5;
+            double side = (obj - refWave) * 0.5;
+
+            writeReferenceLockedFrame(sw, (mid + side) * env, (mid - side) * env);
+        }
+    }
+
+    // ── carried-over layers (v12 base, unchanged) ─────────────────────────────
+
     static void streamVisualImprint(SampleWriter sw, VisualImprint v) throws Exception {
         int count = Math.max(1, v.width * v.height);
-
         for (int i = 0; i < 8; i++) {
             double amp = 0.08 + 0.24 * (v.histR[i] / (double) count);
             streamStereoTone(sw, 396 + i * 33, 12, amp, amp * 0.5, 0, Math.PI / 2);
             streamStereoSilence(sw, 2);
         }
-
         for (int i = 0; i < 8; i++) {
             double amp = 0.08 + 0.24 * (v.histG[i] / (double) count);
             streamStereoTone(sw, 528 + i * 37, 12, amp, amp * 0.5, 0, Math.PI / 2);
             streamStereoSilence(sw, 2);
         }
-
         for (int i = 0; i < 8; i++) {
             double amp = 0.08 + 0.24 * (v.histB[i] / (double) count);
             streamStereoTone(sw, 639 + i * 41, 12, amp, amp * 0.5, 0, Math.PI / 2);
@@ -1292,115 +1030,63 @@ public class MainActivity extends Activity {
 
     static void streamHermesAncientCodeLayer(SampleWriter sw, VisualImprint g) throws Exception {
         int n = hermesFrames();
+        double elementHz = (g.red >= g.green && g.red >= g.blue) ? 852.0
+                         : (g.blue >= g.red && g.blue >= g.green) ? 417.0 : 528.0;
 
-        double elementHz;
-        if (g.red >= g.green && g.red >= g.blue) {
-            elementHz = 852.0;
-        } else if (g.blue >= g.red && g.blue >= g.green) {
-            elementHz = 417.0;
-        } else {
-            elementHz = 528.0;
-        }
-
-        double[] sevenGates = new double[] {396.0, 417.0, 528.0, 639.0, 741.0, 852.0, 963.0};
-
-        double symmetryAmp = 0.08 + 0.16 * clamp(g.symmetry);
-        double edgeAmp = 0.05 + 0.22 * clamp(g.edgeDensity * 4.0);
+        double symmetryAmp   = 0.08 + 0.16 * clamp(g.symmetry);
+        double edgeAmp       = 0.05 + 0.22 * clamp(g.edgeDensity * 4.0);
         double brightnessAmp = 0.05 + 0.12 * clamp(g.brightness);
 
         for (int i = 0; i < n; i++) {
-            double t = i / (double) SAMPLE_RATE;
+            double t    = i / (double) SAMPLE_RATE;
             double frac = i / Math.max(1.0, n - 1.0);
+            int gateIdx = Math.min(6, (int) Math.floor(frac * 7.0));
+            int mirrorGate = 6 - gateIdx;
 
-            int gateIndex = (int) Math.floor(frac * 7.0);
-            if (gateIndex < 0) gateIndex = 0;
-            if (gateIndex > 6) gateIndex = 6;
+            double gateToneL = Math.sin(2.0 * Math.PI * SOLFEGGIO[gateIdx] * t) * symmetryAmp;
+            double gateToneR = Math.sin(2.0 * Math.PI * SOLFEGGIO[mirrorGate] * t + Math.PI / 2.0) * symmetryAmp;
+            double compass   = Math.sin(2.0 * Math.PI * elementHz * t) * brightnessAmp;
+            double ring12    = 0.5 + 0.5 * Math.sin(2.0 * Math.PI * 12.0 * t);
+            double wedge     = Math.sin(2.0 * Math.PI * (9.0 + 18.0 * g.edgeDensity) * t) * edgeAmp * ring12;
+            double golden    = Math.sin(2.0 * Math.PI * (432.0 * PHI) * t) * 0.025;
+            double spiral    = Math.sin(2.0 * Math.PI * (3.0 + 6.0 * frac) * t) * 0.035;
 
-            int mirrorGate = 6 - gateIndex;
-
-            double gateToneL = Math.sin(2.0 * Math.PI * sevenGates[gateIndex] * t) * symmetryAmp;
-            double gateToneR = Math.sin(2.0 * Math.PI * sevenGates[mirrorGate] * t + Math.PI / 2.0) * symmetryAmp;
-
-            double compass = Math.sin(2.0 * Math.PI * elementHz * t) * brightnessAmp;
-            double ring12 = Math.sin(2.0 * Math.PI * 12.0 * t);
-            double ringEnv = 0.5 + 0.5 * ring12;
-            double wedgePulse = Math.sin(2.0 * Math.PI * (9.0 + 18.0 * g.edgeDensity) * t);
-            double wedge = wedgePulse * edgeAmp * ringEnv;
-            double phi = 1.61803398875;
-            double golden = Math.sin(2.0 * Math.PI * (432.0 * phi) * t) * 0.025;
-            double spiralPhase = 2.0 * Math.PI * (3.0 + 6.0 * frac) * t;
-            double spiral = Math.sin(spiralPhase) * 0.035;
-
-            double left = gateToneL + compass + wedge + golden + spiral;
-            double right = gateToneR - compass + wedge * 0.5 + golden - spiral;
-
-            writeReferenceLockedFrame(sw, left, right);
+            writeReferenceLockedFrame(sw,
+                    gateToneL + compass + wedge + golden + spiral,
+                    gateToneR - compass + wedge * 0.5 + golden - spiral);
         }
     }
 
     static void streamMeaningDnaRhythm(SampleWriter sw, String dna) throws Exception {
-        double shortMs = 3.0;
-        double longMs = 4.854;
-
         int max = Math.min(dna.length(), 240);
-
         for (int i = 0; i < max; i++) {
             char c = dna.charAt(i);
-
-            double hz;
-            double ms;
-
-            if (c == 'A') {
-                hz = 396.0;
-                ms = shortMs;
-            } else if (c == 'C') {
-                hz = 528.0;
-                ms = longMs;
-            } else if (c == 'G') {
-                hz = 639.0;
-                ms = shortMs;
-            } else {
-                hz = 741.0;
-                ms = longMs;
-            }
-
+            double hz = (c == 'A') ? 396.0 : (c == 'C') ? 528.0 : (c == 'G') ? 639.0 : 741.0;
+            double ms = (c == 'C' || c == 'T') ? 4.854 : 3.0;
             streamStereoTone(sw, hz, ms, 0.24, 0.18, 0, Math.PI / 2);
             streamStereoSilence(sw, 2);
         }
-
         streamStereoSilence(sw, 60);
     }
 
     static void streamPacketBits(SampleWriter sw, byte[] data) throws Exception {
         byte[] reversed = reverse(data);
-
         int bitSamples = bitFrames();
-
-        double phaseL = 0.0;
-        double phaseR = Math.PI / 2.0;
+        double phaseL = 0.0, phaseR = Math.PI / 2.0;
 
         for (int idx = 0; idx < data.length; idx++) {
             int bL = data[idx] & 0xff;
             int bR = reversed[idx] & 0xff;
-
             for (int bitPos = 7; bitPos >= 0; bitPos--) {
-                int bitL = (bL >> bitPos) & 1;
-                int bitR = (bR >> bitPos) & 1;
-
-                double freqL = bitL == 1 ? F1 : F0;
-                double freqR = bitR == 1 ? F1 : F0;
-
-                double matrixPhase = sw.phaseMatrix[(idx + bitPos) % sw.phaseMatrix.length];
-
+                double freqL = ((bL >> bitPos) & 1) == 1 ? F1 : F0;
+                double freqR = ((bR >> bitPos) & 1) == 1 ? F1 : F0;
+                double matPhase = sw.phaseMatrix[(idx + bitPos) % sw.phaseMatrix.length];
                 double stepL = 2.0 * Math.PI * freqL / SAMPLE_RATE;
                 double stepR = 2.0 * Math.PI * freqR / SAMPLE_RATE;
-
                 for (int s = 0; s < bitSamples; s++) {
-                    double l = Math.sin(phaseL) * 0.58;
-                    double r = Math.sin(phaseR + matrixPhase) * 0.58;
-
-                    writeReferenceLockedFrame(sw, l, r);
-
+                    writeReferenceLockedFrame(sw,
+                            Math.sin(phaseL) * 0.58,
+                            Math.sin(phaseR + matPhase) * 0.58);
                     phaseL = (phaseL + stepL) % (2.0 * Math.PI);
                     phaseR = (phaseR + stepR) % (2.0 * Math.PI);
                 }
@@ -1408,116 +1094,298 @@ public class MainActivity extends Activity {
         }
     }
 
+    // ── primitive stream helpers ──────────────────────────────────────────────
+
+    static void streamStereoSilence(SampleWriter sw, double ms) throws Exception {
+        int n = frames(ms);
+        for (int i = 0; i < n; i++) writeReferenceLockedFrame(sw, 0, 0);
+    }
+
+    static void streamStereoTone(SampleWriter sw, double freq, double ms,
+                                  double ampL, double ampR, double phL, double phR) throws Exception {
+        int n = frames(ms);
+        int fade = Math.max(1, frames(5));
+        for (int i = 0; i < n; i++) {
+            double env = 1.0;
+            if (i < fade) env = i / (double) fade;
+            else if (i > n - fade) env = Math.max(0, (n - i) / (double) fade);
+            double t = i / (double) SAMPLE_RATE;
+            writeReferenceLockedFrame(sw,
+                    Math.sin(2.0 * Math.PI * freq * t + phL) * ampL * env,
+                    Math.sin(2.0 * Math.PI * freq * t + phR) * ampR * env);
+        }
+    }
+
+    static void streamStereoSweep(SampleWriter sw, double startHz, double endHz,
+                                   double ms, double amp, boolean oppositePhase) throws Exception {
+        int n = frames(ms);
+        double phL = 0, phR = oppositePhase ? Math.PI : Math.PI / 2.0;
+        for (int i = 0; i < n; i++) {
+            double freq = startHz + (endHz - startHz) * (i / Math.max(1.0, n - 1.0));
+            double step = 2.0 * Math.PI * freq / SAMPLE_RATE;
+            writeReferenceLockedFrame(sw, Math.sin(phL) * amp, Math.sin(phR) * amp);
+            phL = (phL + step) % (2.0 * Math.PI);
+            phR = (phR + step) % (2.0 * Math.PI);
+        }
+    }
+
+    static void streamSchumannPulseWindow(SampleWriter sw, double ms) throws Exception {
+        int n = frames(ms);
+        for (int i = 0; i < n; i++) {
+            double t = i / (double) SAMPLE_RATE;
+            double gate = (1.0 + Math.sin(2.0 * Math.PI * SCHUMANN_HZ * t)) / 2.0;
+            double carrier = Math.sin(2.0 * Math.PI * 528.0 * t) * 0.15 * gate;
+            writeReferenceLockedFrame(sw, carrier, -carrier);
+        }
+    }
+
+    // ── reference-locked frame writer ─────────────────────────────────────────
+
+    static void writeReferenceLockedFrame(SampleWriter sw, double objL, double objR) throws Exception {
+        double t = sw.framesWritten / (double) SAMPLE_RATE;
+        double reference = Math.sin(2.0 * Math.PI * AURA_HZ  * t) * REFERENCE_528_AMP
+                         + Math.sin(2.0 * Math.PI * HE_NE_HZ * t) * REFERENCE_HE_NE_AMP
+                         + Math.sin(2.0 * Math.PI * 40.0      * t) * REFERENCE_40_AMP;
+
+        double gate = 1.0 - GATE_DEPTH + GATE_DEPTH * (1.0 + Math.sin(2.0 * Math.PI * SCHUMANN_HZ * t)) / 2.0;
+
+        // Tesla 3-6-9 pulse beat accent
+        int beat = ((int) (t * 9.0)) % 9;
+        double pulse = (beat == 2 || beat == 5 || beat == 8) ? 1.08 : 1.0;
+
+        writeLE16(sw.out, (int) (clamp(reference + objL * gate * pulse) * 32767.0));
+        writeLE16(sw.out, (int) (clamp(reference + objR * gate * pulse) * 32767.0));
+        sw.framesWritten++;
+    }
+
+    // ── SampleWriter class ────────────────────────────────────────────────────
+
+    static class SampleWriter {
+        OutputStream out;
+        int framesWritten = 0;
+        double[] phaseMatrix;
+        SampleWriter(OutputStream out, double[] phaseMatrix) {
+            this.out = out;
+            this.phaseMatrix = phaseMatrix;
+        }
+    }
+
+    // ── frame count helpers ───────────────────────────────────────────────────
+
+    static int calculateTotalFrames(byte[] capsuleBytes, String dna) {
+        int total = 0;
+        total += frames(250) + frames(500);         // open silence + MBER sweep
+        total += frames(HE_NE_MS);                  // He-Ne sync
+        total += frames(300) + frames(300);         // sweeps
+        total += frames(1200);                       // solfeggio stack
+        total += frames(900);                        // Tesla 3-6-9
+        total += 16 * (frames(30) + frames(3));     // speckle feedback (v13: 30ms)
+        total += frames(1500);                       // Jiang morphic
+        total += frames(800);                        // scalar mid/side
+        total += 24 * (frames(12) + frames(2));     // visual imprint
+        total += 8 * (frames(80) + frames(10));     // acoustic imprint
+        total += hermesFrames();                     // Hermes
+        total += meaningFrames(dna);                 // DNA rhythm
+        total += capsuleBytes.length * 8 * bitFrames(); // packet bits
+        total += frames(500) + frames(250);         // close sweep + silence
+        return total;
+    }
+
+    static int frames(double ms) { return (int)(SAMPLE_RATE * ms / 1000.0); }
+    static int bitFrames()       { return Math.max(60, frames(BIT_MS)); }
+    static int hermesFrames()    { return frames(888); }
+
+    static int meaningFrames(String dna) {
+        int max = Math.min(dna.length(), 240), total = 0;
+        for (int i = 0; i < max; i++) {
+            char c = dna.charAt(i);
+            total += frames((c == 'C' || c == 'T') ? 4.854 : 3.0) + frames(2.0);
+        }
+        return total + frames(60);
+    }
+
+    // ── image helpers ─────────────────────────────────────────────────────────
+
+    static Bitmap shrink(Bitmap src) {
+        int w = src.getWidth(), h = src.getHeight();
+        double scale = Math.min((double) MAX_DIM / w, (double) MAX_DIM / h);
+        if (scale >= 1.0) return src.copy(Bitmap.Config.ARGB_8888, false);
+        return Bitmap.createScaledBitmap(src,
+                Math.max(1, (int) Math.round(w * scale)),
+                Math.max(1, (int) Math.round(h * scale)), true);
+    }
+
+    static byte[] bitmapToRgba(Bitmap bmp) throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        for (int y = 0; y < bmp.getHeight(); y++) {
+            for (int x = 0; x < bmp.getWidth(); x++) {
+                int c = bmp.getPixel(x, y);
+                out.write((c >> 16) & 0xff);
+                out.write((c >> 8)  & 0xff);
+                out.write(c & 0xff);
+                out.write((c >> 24) & 0xff);
+            }
+        }
+        return out.toByteArray();
+    }
+
+    static byte[] deflate(byte[] raw) throws Exception {
+        Deflater def = new Deflater(9);
+        def.setInput(raw); def.finish();
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buf = new byte[4096];
+        while (!def.finished()) { int n = def.deflate(buf); out.write(buf, 0, n); }
+        def.end();
+        return out.toByteArray();
+    }
+
+    static VisualImprint extractVisualImprint(Bitmap bmp, byte[] raw, byte[] comp) {
+        VisualImprint g = new VisualImprint();
+        g.width = bmp.getWidth(); g.height = bmp.getHeight();
+        int w = g.width, h = g.height, count = Math.max(1, w * h);
+
+        double brightness = 0, red = 0, green = 0, blue = 0, edge = 0, mirror = 0;
+
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int c = bmp.getPixel(x, y);
+                int r = (c >> 16) & 0xff, gg = (c >> 8) & 0xff, b = c & 0xff;
+                g.histR[Math.min(7, r / 32)]++;
+                g.histG[Math.min(7, gg / 32)]++;
+                g.histB[Math.min(7, b / 32)]++;
+                double gray = (r + gg + b) / 3.0;
+                brightness += gray; red += r; green += gg; blue += b;
+                if (x + 1 < w) {
+                    int c2 = bmp.getPixel(x + 1, y);
+                    edge += Math.abs(gray - (((c2>>16)&0xff)+((c2>>8)&0xff)+(c2&0xff))/3.0);
+                }
+                if (y + 1 < h) {
+                    int c3 = bmp.getPixel(x, y + 1);
+                    edge += Math.abs(gray - (((c3>>16)&0xff)+((c3>>8)&0xff)+(c3&0xff))/3.0);
+                }
+                int cm = bmp.getPixel(w - 1 - x, y);
+                mirror += Math.abs(gray - (((cm>>16)&0xff)+((cm>>8)&0xff)+(cm&0xff))/3.0);
+            }
+        }
+        g.brightness = brightness / (count * 255.0);
+        g.red   = red   / (count * 255.0);
+        g.green = green / (count * 255.0);
+        g.blue  = blue  / (count * 255.0);
+        g.edgeDensity = edge / Math.max(1.0, count * 255.0 * 2.0);
+        g.symmetry    = 1.0 - (mirror / Math.max(1.0, count * 255.0));
+        g.fractalCompressionProxy = comp.length / Math.max(1.0, raw.length);
+
+        CRC32 rc = new CRC32(); rc.update(raw);   g.rawCrc = rc.getValue();
+        CRC32 cc = new CRC32(); cc.update(comp);  g.compressedCrc = cc.getValue();
+        return g;
+    }
+
+    // ── DNA encoding ──────────────────────────────────────────────────────────
+
+    static String phraseToDna(String phrase) {
+        byte[] bytes = phrase.getBytes(StandardCharsets.UTF_8);
+        StringBuilder dna = new StringBuilder();
+        for (byte b : bytes) {
+            for (int i = 6; i >= 0; i -= 2) {
+                int pair = (b >> i) & 0x03;
+                dna.append(pair == 0 ? 'A' : pair == 1 ? 'C' : pair == 2 ? 'G' : 'T');
+            }
+        }
+        return dna.toString();
+    }
+
+    // ── WAV header ────────────────────────────────────────────────────────────
+
     static void writeStereoWavHeader(OutputStream out, int totalFrames) throws Exception {
-        int channels = 2;
-        int bytesPerSample = 2;
-        int dataSize = totalFrames * channels * bytesPerSample;
-        int totalSize = 36 + dataSize;
-
-        writeAscii(out, "RIFF");
-        writeLE32(out, totalSize);
+        int channels = 2, bps = 2;
+        int dataSize = totalFrames * channels * bps;
+        writeAscii(out, "RIFF"); writeLE32(out, 36 + dataSize);
         writeAscii(out, "WAVE");
-
-        writeAscii(out, "fmt ");
-        writeLE32(out, 16);
-        writeLE16(out, 1);
-        writeLE16(out, channels);
+        writeAscii(out, "fmt "); writeLE32(out, 16);
+        writeLE16(out, 1); writeLE16(out, channels);
         writeLE32(out, SAMPLE_RATE);
-        writeLE32(out, SAMPLE_RATE * channels * bytesPerSample);
-        writeLE16(out, channels * bytesPerSample);
-        writeLE16(out, 16);
-
-        writeAscii(out, "data");
-        writeLE32(out, dataSize);
+        writeLE32(out, SAMPLE_RATE * channels * bps);
+        writeLE16(out, channels * bps); writeLE16(out, 16);
+        writeAscii(out, "data"); writeLE32(out, dataSize);
     }
 
-    static String buildManifest(
-            VisualImprint v,
-            AcousticImprint a,
-            OpticalCorrelator o,
-            double[] phaseMatrix,
-            int compressedBytes,
-            int capsuleBytes,
-            String meaningDna,
-            String phrase,
-            boolean finalManifest
-    ) {
+    // ── manifest JSON ─────────────────────────────────────────────────────────
+
+    static String buildManifest(Capsule cap, boolean fin) {
+        VisualImprint v = cap.visual;
+        AcousticImprint a = cap.acoustic;
+        SpeckleCorrelator sc = cap.correlator;
         return "{\n" +
-                "  \"name\":\"DNA Forge Max v12 - Gariaev Optical Correlator Emulator\",\n" +
-                "  \"final_manifest\":" + finalManifest + ",\n" +
-                "  \"safety\":\"Software simulator/controller. No medical claims. Consent-based, non-invasive, low-power only. Phone screen is not true infrared and phone is not a physical He-Ne/MBER lab apparatus.\",\n" +
-                "  \"phone_mapping\":{\"camera\":\"visual donor scanner\",\"microphone\":\"acoustic resonance scanner\",\"speaker\":\"stereo wavecode carrier\",\"screen\":\"red/He-Ne proxy\",\"manifest\":\"MBER/Biotron hardware export memory\"},\n" +
-                "  \"session_profile\":{\"visual_donor_pattern\":true,\"acoustic_donor_pattern\":true,\"symbolic_meaning_phrase\":true,\"dynamic_phase_shift_matrix\":true,\"optical_correlator_emulator\":true},\n" +
-                "  \"gariaev_optical_correlator_emulator\":{\"passes\":[\"dark-frame control\",\"red reference illumination\",\"dim-red reference illumination\",\"7.83 Hz pulse proxy\",\"3/6/9 pulse proxy\"],\"dark_mean\":" + r(o.darkMean) + ",\"red_mean\":" + r(o.redMean) + ",\"dim_red_mean\":" + r(o.dimRedMean) + ",\"schumann_pulse_mean\":" + r(o.schumannPulseMean) + ",\"pulse369_mean\":" + r(o.pulse369Mean) + ",\"speckle_change_proxy\":" + r(o.speckleChange) + ",\"brightness_fluctuation\":" + r(o.brightnessFluctuation) + ",\"edge_fluctuation\":" + r(o.edgeFluctuation) + ",\"color_shift\":" + r(o.colorShift) + ",\"mber_modulation_index\":" + r(o.mberModulationIndex) + ",\"optical_feedback_matrix\":" + doubleArray(o.feedbackMatrix) + "},\n" +
-                "  \"visual_donor_pattern\":{\"width\":" + v.width + ",\"height\":" + v.height + ",\"brightness\":" + r(v.brightness) + ",\"red\":" + r(v.red) + ",\"green\":" + r(v.green) + ",\"blue\":" + r(v.blue) + ",\"edge_density\":" + r(v.edgeDensity) + ",\"symmetry\":" + r(v.symmetry) + ",\"fractal_compression_proxy\":" + r(v.fractalCompressionProxy) + ",\"rgb_histogram_bins\":{\"r\":" + intArray(v.histR) + ",\"g\":" + intArray(v.histG) + ",\"b\":" + intArray(v.histB) + "}},\n" +
-                "  \"acoustic_donor_pattern\":{\"rms\":" + r(a.rms) + ",\"zero_cross_rate\":" + r(a.zeroCrossRate) + ",\"peak_frequencies_hz\":" + doubleArray(a.peaks) + ",\"relative_powers\":" + doubleArray(a.powers) + "},\n" +
-                "  \"symbolic_meaning_phrase\":{\"phrase\":\"" + escape(phrase) + "\",\"symbolic_dna\":\"" + meaningDna + "\"},\n" +
-                "  \"dynamic_phase_shift_matrix\":{\"description\":\"right-channel optical-feedback surrogate controlled by visual imprint, acoustic peaks, and phrase hash\",\"radians\":" + doubleArray(phaseMatrix) + "},\n" +
-                "  \"gariaev_optical_correlator_profile\":{\"he_ne_nm\":632.8,\"he_ne_power_mw\":2,\"audio_signature_hz\":6328,\"orthogonal_polarization_modes\":true,\"glass_slide_sample_chamber\":\"hardware profile\",\"partial_resonator_feedback\":\"simulated by right-channel phase matrix\",\"mber\":\"modulated broadband electromagnetic radiation metadata layer\"},\n" +
-                "  \"jiang_biotron_profile\":{\"researcher\":\"Jiang Kanzhen\",\"themes\":[\"biological information transmission metadata\",\"bio-ultra-high-frequency profile\",\"Biotron Tszyan-2 style donor-to-recipient information profile\"],\"uhf_rf_note\":\"phone cannot generate UHF/RF directly; export profile is for external hardware\"},\n" +
-                "  \"reference_wave_lock\":{\"active\":true,\"continuous_reference_lattice\":[528,6328,40,7.83],\"mid_side_holography\":true},\n" +
-                "  \"audio_layers\":{\"format\":\"stereo 16-bit PCM WAV\",\"zero_hz\":6400,\"one_hz\":7000,\"he_ne_preamble_hz\":6328,\"rife_open_sweep_hz\":[20,20000],\"rife_close_sweep_hz\":[20000,20],\"schumann_gate_hz\":7.83,\"bit_ms\":1.5},\n" +
-                "  \"hermes_layer\":{\"active\":true,\"rule\":\"not random; selected by image color, symmetry, edge density, and meaning\"},\n" +
-                "  \"hardware_export_profile\":{\"he_ne_laser_driver\":\"632.8 nm timing/sync metadata\",\"coil_pad\":\"384 kHz marker metadata plus audio-derived pulse profile\",\"sdr_transmitter\":\"MBER/RF export metadata only\",\"photodiode\":\"feedback sensor profile\",\"sample_chamber\":\"glass-slide donor chamber profile\"},\n" +
-                "  \"payload\":{\"compressed_bytes\":" + compressedBytes + ",\"capsule_bytes\":" + capsuleBytes + ",\"stream_to_file\":true,\"triple_header\":true,\"crc32\":true,\"phase_conjugate_mirror\":true}\n" +
-                "}\n";
+            "  \"name\":\"DNA Forge Max v13 — Gariaev Speckle + Jiang Kanzhen + Tesla 3-6-9\",\n" +
+            "  \"version\":\"13.0-max\",\n" +
+            "  \"session_name\":\"" + escape(cap.sessionName) + "\",\n" +
+            "  \"final_manifest\":" + fin + ",\n" +
+            "  \"safety\":\"Software simulator/controller. No medical claims. Consent-based, non-invasive, low-power only.\",\n" +
+            "  \"v13_upgrades\":{\"gariaev_speckle_interferometry\":true,\"jiang_kanzhen_morphic\":true,\"tesla_369_harmonic_grid\":true,\"full_solfeggio_stack\":true,\"scalar_mid_side\":true,\"spatial_centroid\":true},\n" +
+            "  \"visual_donor\":{\"width\":" + v.width + ",\"height\":" + v.height +
+                ",\"brightness\":" + r(v.brightness) + ",\"symmetry\":" + r(v.symmetry) +
+                ",\"edge_density\":" + r(v.edgeDensity) +
+                ",\"spatial_centroid_x\":" + r(v.spatialCentroidX) +
+                ",\"spatial_centroid_y\":" + r(v.spatialCentroidY) + "},\n" +
+            "  \"acoustic_donor\":{\"rms\":" + r(a.rms) + ",\"dominant_hz\":" + r(a.dominantHz) +
+                ",\"peaks\":" + doubleArray(a.peaks) + ",\"powers\":" + doubleArray(a.powers) + "},\n" +
+            "  \"speckle_correlator\":{\"mber_index\":" + r(sc.mberIndex) +
+                ",\"dark_mean\":" + r(sc.darkMean) + ",\"red_mean\":" + r(sc.redMean) +
+                ",\"correlation_coeffs\":" + doubleArray(sc.correlationCoeffs) +
+                ",\"feedback_matrix\":" + doubleArray(sc.feedbackMatrix) + "},\n" +
+            "  \"phase_matrix\":" + doubleArray(cap.phaseMatrix) + ",\n" +
+            "  \"symbolic_dna\":\"" + cap.meaningDna.substring(0, Math.min(60, cap.meaningDna.length())) + "...\",\n" +
+            "  \"audio_layers\":[\"opening_sweep\",\"he_ne_sync\",\"solfeggio_stack\",\"tesla_369_grid\",\"speckle_feedback\",\"jiang_morphic\",\"scalar_mid_side\",\"visual_imprint\",\"acoustic_imprint\",\"hermes_ancient_code\",\"dna_rhythm\",\"packet_bits\",\"closing_sweep\"],\n" +
+            "  \"payload\":{\"header\":\"BIOTRON13/DFMAX13\",\"capsule_bytes\":" + (cap.capsuleBytes != null ? cap.capsuleBytes.length : 0) + "}\n" +
+            "}\n";
     }
+
+    // ── reset ─────────────────────────────────────────────────────────────────
+
+    void resetState() {
+        imageUri = null; imageBitmap = null; sessionName = "";
+        visual = null; acoustic = null; correlator = null;
+        btnPickImage.setText("[ 1 ] LOAD DONOR IMAGE"); btnPickImage.setTextColor(0xFF00FF88);
+        btnScanMic.setText("[ 2 ] SCAN MIC RESONANCE"); btnScanMic.setTextColor(0xFF00FF88);
+        btnScanCorrelator.setText("[ 3 ] SPECKLE CORRELATOR SCAN"); btnScanCorrelator.setTextColor(0xFF00FF88);
+        btnForge.setEnabled(true);
+        tvResult.setText(""); tvStatus.setText("Reset — ready for new session");
+        progressBar.setVisibility(View.GONE); progressBar.setProgress(0);
+        tvProgress.setText(""); btnReset.setVisibility(View.GONE);
+    }
+
+    // ── utilities ─────────────────────────────────────────────────────────────
 
     static String intArray(int[] a) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("[");
-        for (int i = 0; i < a.length; i++) {
-            if (i > 0) sb.append(",");
-            sb.append(a[i]);
-        }
-        sb.append("]");
-        return sb.toString();
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < a.length; i++) { if (i > 0) sb.append(","); sb.append(a[i]); }
+        return sb.append("]").toString();
     }
 
     static String doubleArray(double[] a) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("[");
-        for (int i = 0; i < a.length; i++) {
-            if (i > 0) sb.append(",");
-            sb.append(r(a[i]));
-        }
-        sb.append("]");
-        return sb.toString();
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < a.length; i++) { if (i > 0) sb.append(","); sb.append(r(a[i])); }
+        return sb.append("]").toString();
     }
 
-    static byte[] reverse(byte[] input) {
-        byte[] out = new byte[input.length];
-        for (int i = 0; i < input.length; i++) out[i] = input[input.length - 1 - i];
+    static byte[] reverse(byte[] in) {
+        byte[] out = new byte[in.length];
+        for (int i = 0; i < in.length; i++) out[i] = in[in.length - 1 - i];
         return out;
     }
 
-    static double clamp(double x) {
-        if (x > 1.0) return 1.0;
-        if (x < -1.0) return -1.0;
-        return x;
-    }
+    static double clamp(double x) { return x > 1.0 ? 1.0 : x < -1.0 ? -1.0 : x; }
+    static String escape(String s) { return s.replace("\\","\\\\").replace("\"","\\\""); }
+    static String r(double v)      { return String.format(Locale.US, "%.6f", v); }
 
-    static String escape(String s) {
-        return s.replace("\\", "\\\\").replace("\"", "\\\"");
+    static void writeAscii(OutputStream o, String s) throws Exception {
+        o.write(s.getBytes(StandardCharsets.US_ASCII));
     }
-
-    static String r(double v) {
-        return String.format(Locale.US, "%.6f", v);
+    static void writeLE16(OutputStream o, int v) throws Exception {
+        o.write(v & 0xff); o.write((v >> 8) & 0xff);
     }
-
-    static void writeAscii(OutputStream out, String s) throws Exception {
-        out.write(s.getBytes(StandardCharsets.US_ASCII));
-    }
-
-    static void writeLE16(OutputStream out, int v) throws Exception {
-        out.write(v & 0xff);
-        out.write((v >> 8) & 0xff);
-    }
-
-    static void writeLE32(OutputStream out, int v) throws Exception {
-        out.write(v & 0xff);
-        out.write((v >> 8) & 0xff);
-        out.write((v >> 16) & 0xff);
-        out.write((v >> 24) & 0xff);
+    static void writeLE32(OutputStream o, int v) throws Exception {
+        o.write(v & 0xff); o.write((v >> 8) & 0xff);
+        o.write((v >> 16) & 0xff); o.write((v >> 24) & 0xff);
     }
 }

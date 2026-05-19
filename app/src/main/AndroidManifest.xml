@@ -7,7 +7,7 @@
 
     <application
         android:theme="@style/AppTheme"
-        android:label="DNA Forge Max v12"
+        android:label="DNA Forge Max v13"
         android:allowBackup="true"
         android:supportsRtl="true">
 
