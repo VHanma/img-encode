@@ -36,7 +36,7 @@
       "score": 2,
       "repo": "1992513/ntdtv",
       "path": "gb/2023/09/29/a103794616.md",
-      "url": "https://github.com/1992513/ntdtv/blob/51c4159458f456eacb70dd7616f29970b7c23d9f/gb/2023/09/29/a103794616.md",
+      "url": "https://github.com/1992513/ntdtv/blob/63deadfbf9718b179c59480bf79d2de9be2c782d/gb/2023/09/29/a103794616.md",
       "features": [],
       "frequencies": [],
       "snippet": ""
@@ -79,9 +79,18 @@
     },
     {
       "score": 2,
+      "repo": "VHanma/plasma-eye",
+      "path": "README.md",
+      "url": "https://github.com/VHanma/plasma-eye/blob/036813bfb465fc84a1b75bbceed91dec4232d239/README.md",
+      "features": [],
+      "frequencies": [],
+      "snippet": ""
+    },
+    {
+      "score": 2,
       "repo": "envisioning/research",
       "path": "content/all/dna-phantom-effect--xenotech.md",
-      "url": "https://github.com/envisioning/research/blob/e7423f13c17c9734b1ec0130c828a254c05bf408/content/all/dna-phantom-effect--xenotech.md",
+      "url": "https://github.com/envisioning/research/blob/0fd78005f880e0c7e3e00bb3b4a34410c8a71533/content/all/dna-phantom-effect--xenotech.md",
       "features": [],
       "frequencies": [],
       "snippet": ""
@@ -108,16 +117,34 @@
       "score": 2,
       "repo": "sarapataryszard80-Rysa/Platforma-Kontaktowa",
       "path": "4.5 Retrospekcja 6.1 Triady AI.md",
-      "url": "https://github.com/sarapataryszard80-Rysa/Platforma-Kontaktowa/blob/268c3e03086e56106ae44a221d74bc7eb23b4860/4.5%20Retrospekcja%206.1%20Triady%20AI.md",
+      "url": "https://github.com/sarapataryszard80-Rysa/Platforma-Kontaktowa/blob/75ed446c3b43f0d246636c33c4e94c14f6de66d1/4.5%20Retrospekcja%206.1%20Triady%20AI.md",
       "features": [],
       "frequencies": [],
       "snippet": ""
     },
     {
       "score": 2,
-      "repo": "yxf203/PoisonArena",
-      "path": "combat/data/combat_data/single_data/msmarco/P/P5-white-suffix-dcorpus-ans2.json",
-      "url": "https://github.com/yxf203/PoisonArena/blob/001da5aefa1779f3d2cd1495e0a2d9d614a2fa81/combat/data/combat_data/single_data/msmarco/P/P5-white-suffix-dcorpus-ans2.json",
+      "repo": "zvizdo/ufo-knowledge-base",
+      "path": "ufo-kb/wiki/concepts/dna-phantom-effect.md",
+      "url": "https://github.com/zvizdo/ufo-knowledge-base/blob/ce33f80e07bd9c553a72351148fef0b732a0f613/ufo-kb/wiki/concepts/dna-phantom-effect.md",
+      "features": [],
+      "frequencies": [],
+      "snippet": ""
+    },
+    {
+      "score": 2,
+      "repo": "zvizdo/ufo-knowledge-base",
+      "path": "ufo-kb/wiki/entities/people/peter-gariaev.md",
+      "url": "https://github.com/zvizdo/ufo-knowledge-base/blob/ce33f80e07bd9c553a72351148fef0b732a0f613/ufo-kb/wiki/entities/people/peter-gariaev.md",
+      "features": [],
+      "frequencies": [],
+      "snippet": ""
+    },
+    {
+      "score": 2,
+      "repo": "zvizdo/ufo-knowledge-base",
+      "path": "ufo-kb/wiki/concepts/scalar-waves.md",
+      "url": "https://github.com/zvizdo/ufo-knowledge-base/blob/ce33f80e07bd9c553a72351148fef0b732a0f613/ufo-kb/wiki/concepts/scalar-waves.md",
       "features": [],
       "frequencies": [],
       "snippet": ""

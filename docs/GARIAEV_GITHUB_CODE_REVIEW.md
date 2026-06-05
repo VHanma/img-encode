@@ -35,7 +35,7 @@ Do not copy unknown code blindly; extract architecture patterns unless license c
 
 ### 1. 1992513/ntdtv / gb/2023/09/29/a103794616.md
 - Score: 2
-- URL: https://github.com/1992513/ntdtv/blob/51c4159458f456eacb70dd7616f29970b7c23d9f/gb/2023/09/29/a103794616.md
+- URL: https://github.com/1992513/ntdtv/blob/63deadfbf9718b179c59480bf79d2de9be2c782d/gb/2023/09/29/a103794616.md
 - Features: 
 
 ### 2. Alemusica/Mirror7 / docs/RESEARCH_SOURCES.md
@@ -58,27 +58,42 @@ Do not copy unknown code blindly; extract architecture patterns unless license c
 - URL: https://github.com/VHanma/morphogenetic-encoder-v4/blob/4a330691d97afdb562adc898ceeaae8b6bdeed33/gariaev_superhuman_frequency_matrix.md
 - Features: 
 
-### 6. envisioning/research / content/all/dna-phantom-effect--xenotech.md
+### 6. VHanma/plasma-eye / README.md
 - Score: 2
-- URL: https://github.com/envisioning/research/blob/e7423f13c17c9734b1ec0130c828a254c05bf408/content/all/dna-phantom-effect--xenotech.md
+- URL: https://github.com/VHanma/plasma-eye/blob/036813bfb465fc84a1b75bbceed91dec4232d239/README.md
 - Features: 
 
-### 7. lifeplus1/AET / _posts/2025-09-07-dr-peter-gariaevs-wave-genetics-dna-and-information-fields.md
+### 7. envisioning/research / content/all/dna-phantom-effect--xenotech.md
+- Score: 2
+- URL: https://github.com/envisioning/research/blob/0fd78005f880e0c7e3e00bb3b4a34410c8a71533/content/all/dna-phantom-effect--xenotech.md
+- Features: 
+
+### 8. lifeplus1/AET / _posts/2025-09-07-dr-peter-gariaevs-wave-genetics-dna-and-information-fields.md
 - Score: 2
 - URL: https://github.com/lifeplus1/AET/blob/c9432f790923938fec0cc1cee26befc0b1ffdb28/_posts/2025-09-07-dr-peter-gariaevs-wave-genetics-dna-and-information-fields.md
 - Features: 
 
-### 8. mahapo/ark-data / ark/books/Gangstalking/The Notion of Wave-Genome and DNA as Topological Quantum Computer.json
+### 9. mahapo/ark-data / ark/books/Gangstalking/The Notion of Wave-Genome and DNA as Topological Quantum Computer.json
 - Score: 2
 - URL: https://github.com/mahapo/ark-data/blob/a9979e28defe9a65373b13a8350f1a221d6b889f/ark/books/Gangstalking/The%20Notion%20of%20Wave-Genome%20and%20DNA%20as%20Topological%20Quantum%20Computer.json
 - Features: 
 
-### 9. sarapataryszard80-Rysa/Platforma-Kontaktowa / 4.5 Retrospekcja 6.1 Triady AI.md
+### 10. sarapataryszard80-Rysa/Platforma-Kontaktowa / 4.5 Retrospekcja 6.1 Triady AI.md
 - Score: 2
-- URL: https://github.com/sarapataryszard80-Rysa/Platforma-Kontaktowa/blob/268c3e03086e56106ae44a221d74bc7eb23b4860/4.5%20Retrospekcja%206.1%20Triady%20AI.md
+- URL: https://github.com/sarapataryszard80-Rysa/Platforma-Kontaktowa/blob/75ed446c3b43f0d246636c33c4e94c14f6de66d1/4.5%20Retrospekcja%206.1%20Triady%20AI.md
 - Features: 
 
-### 10. yxf203/PoisonArena / combat/data/combat_data/single_data/msmarco/P/P5-white-suffix-dcorpus-ans2.json
+### 11. zvizdo/ufo-knowledge-base / ufo-kb/wiki/concepts/dna-phantom-effect.md
 - Score: 2
-- URL: https://github.com/yxf203/PoisonArena/blob/001da5aefa1779f3d2cd1495e0a2d9d614a2fa81/combat/data/combat_data/single_data/msmarco/P/P5-white-suffix-dcorpus-ans2.json
+- URL: https://github.com/zvizdo/ufo-knowledge-base/blob/ce33f80e07bd9c553a72351148fef0b732a0f613/ufo-kb/wiki/concepts/dna-phantom-effect.md
+- Features: 
+
+### 12. zvizdo/ufo-knowledge-base / ufo-kb/wiki/entities/people/peter-gariaev.md
+- Score: 2
+- URL: https://github.com/zvizdo/ufo-knowledge-base/blob/ce33f80e07bd9c553a72351148fef0b732a0f613/ufo-kb/wiki/entities/people/peter-gariaev.md
+- Features: 
+
+### 13. zvizdo/ufo-knowledge-base / ufo-kb/wiki/concepts/scalar-waves.md
+- Score: 2
+- URL: https://github.com/zvizdo/ufo-knowledge-base/blob/ce33f80e07bd9c553a72351148fef0b732a0f613/ufo-kb/wiki/concepts/scalar-waves.md
 - Features: 
