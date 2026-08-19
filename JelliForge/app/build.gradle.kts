@@ -1,3 +1,5 @@
+import java.util.Base64
+
 plugins {
     id("com.android.application")
 }
@@ -6,7 +8,7 @@ val encodedKeystore = file("jelliforge-debug.keystore.b64")
 val stableKeystore = layout.buildDirectory.file("jelliforge-debug.keystore").get().asFile
 if (!stableKeystore.exists()) {
     stableKeystore.parentFile.mkdirs()
-    stableKeystore.writeBytes(java.util.Base64.getDecoder().decode(encodedKeystore.readText().trim()))
+    stableKeystore.writeBytes(Base64.getDecoder().decode(encodedKeystore.readText().trim()))
 }
 
 android {
