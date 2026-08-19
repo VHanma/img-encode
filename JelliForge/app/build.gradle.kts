@@ -2,6 +2,13 @@ plugins {
     id("com.android.application")
 }
 
+val encodedKeystore = file("jelliforge-debug.keystore.b64")
+val stableKeystore = layout.buildDirectory.file("jelliforge-debug.keystore").get().asFile
+if (!stableKeystore.exists()) {
+    stableKeystore.parentFile.mkdirs()
+    stableKeystore.writeBytes(java.util.Base64.getDecoder().decode(encodedKeystore.readText().trim()))
+}
+
 android {
     namespace = "com.vhanma.jelliforge"
     compileSdk = 35
@@ -14,9 +21,22 @@ android {
         versionName = "1.1"
     }
 
+    signingConfigs {
+        create("stable") {
+            storeFile = stableKeystore
+            storePassword = "jelliforge"
+            keyAlias = "jelliforge"
+            keyPassword = "jelliforge"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("stable")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("stable")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
