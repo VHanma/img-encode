@@ -35,11 +35,11 @@ jobs:
         run: gradle --no-daemon :app:assembleDebug
 
       - name: Rename APK
-        run: cp JelliForge/app/build/outputs/apk/debug/app-debug.apk JelliForge-v1.0-multi-photo.apk
+        run: cp JelliForge/app/build/outputs/apk/debug/app-debug.apk JelliForge-v1.1-paint-editor.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: JelliForge-v1.0-APK
-          path: JelliForge-v1.0-multi-photo.apk
+          name: JelliForge-v1.1-APK
+          path: JelliForge-v1.1-paint-editor.apk
           if-no-files-found: error
