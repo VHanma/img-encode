@@ -1,11 +1,9 @@
-name: Build APK
+name: Build SpectraDNA v3.2 COMPACT EXACT APK
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - master
-      - main
       - spectradna-max-v3
   pull_request:
     branches:
@@ -20,7 +18,7 @@ permissions:
 jobs:
   build:
     if: github.actor != 'github-actions[bot]'
-    name: Build SpectraDNA MAX v3.1 AUTO FAST APK
+    name: Build SpectraDNA MAX v3.2 COMPACT EXACT APK
     runs-on: ubuntu-22.04
     timeout-minutes: 40
 
@@ -57,7 +55,7 @@ jobs:
           unzip -t /tmp/SpectraDNA-Vault-MAX-v3-BioWave-source.zip
           unzip -q /tmp/SpectraDNA-Vault-MAX-v3-BioWave-source.zip -d buildsrc
 
-      - name: Install exact v3.1 AUTO FAST overlays and verify SHA-256
+      - name: Reassemble v3.1 base overlays
         run: |
           ROOT=buildsrc/SpectraDNA-Vault-MAX-v3
           cat spectradna-max-v3/v31overlay/MainActivity.java.part* > "$ROOT/app/src/main/java/com/vaan/spectradna/MainActivity.java"
@@ -66,11 +64,19 @@ jobs:
           cp spectradna-max-v3/v31overlay/README.md "$ROOT/README.md"
           echo "d342d021fd3e5c418a4dd63b67832956dce08148a8cbb8b3c9525823a0378137  $ROOT/app/src/main/java/com/vaan/spectradna/MainActivity.java" | sha256sum -c -
           echo "8c3a087daecf2feb0128698b8872abf518e6be784c399423a96763f90eff1a03  $ROOT/app/src/main/java/com/vaan/spectradna/WavVault.java" | sha256sum -c -
-          echo "6234ce1d3e5b67a56f7b9fafbf8195530f58f33aff9fb474ad20e83fa293e9a6  $ROOT/app/build.gradle" | sha256sum -c -
-          echo "eabba8478851eb414901db58ff8ac73187f099553a79b12377ad0c50375d45e9  $ROOT/README.md" | sha256sum -c -
-          grep -q "3.1.0-auto-fast" "$ROOT/app/build.gradle"
-          grep -q "AUTO BUILD EVERYTHING" "$ROOT/app/src/main/java/com/vaan/spectradna/MainActivity.java"
-          grep -q "prepareGrid" "$ROOT/app/src/main/java/com/vaan/spectradna/WavVault.java"
+
+      - name: Apply v3.2 COMPACT EXACT overlay
+        run: |
+          ROOT=buildsrc/SpectraDNA-Vault-MAX-v3
+          cp spectradna-max-v3/v32overlay/CompactArchive.java "$ROOT/app/src/main/java/com/vaan/spectradna/CompactArchive.java"
+          python3 spectradna-max-v3/v32overlay/apply_v32.py "$ROOT"
+          cp spectradna-max-v3/v32overlay/build.gradle "$ROOT/app/build.gradle"
+          cp spectradna-max-v3/v32overlay/README.md "$ROOT/README.md"
+          grep -q "3.2.0-compact-exact" "$ROOT/app/build.gradle"
+          grep -q "COMPACT EXACT" "$ROOT/app/src/main/java/com/vaan/spectradna/MainActivity.java"
+          grep -q "writeCompactProfile" "$ROOT/app/src/main/java/com/vaan/spectradna/WavVault.java"
+          grep -q "readEmbeddedArchive" "$ROOT/app/src/main/java/com/vaan/spectradna/WavVault.java"
+          grep -q "class CompactArchive" "$ROOT/app/src/main/java/com/vaan/spectradna/CompactArchive.java"
 
       - name: Run SpectraDNA codec self-tests
         working-directory: buildsrc/SpectraDNA-Vault-MAX-v3
@@ -83,23 +89,23 @@ jobs:
           java -cp core-test-classes WavSelfTest
           java -cp core-test-classes BioWaveSelfTest
 
-      - name: Build SpectraDNA v3.1 APK
+      - name: Build SpectraDNA v3.2 APK
         working-directory: buildsrc/SpectraDNA-Vault-MAX-v3
         run: gradle :app:assembleDebug --no-daemon --stacktrace
 
       - name: Collect APK and checksum
         run: |
-          cp buildsrc/SpectraDNA-Vault-MAX-v3/app/build/outputs/apk/debug/app-debug.apk spectradna-max-v3/SpectraDNA-Vault-MAX-v3.1-AUTO-FAST.apk
-          sha256sum spectradna-max-v3/SpectraDNA-Vault-MAX-v3.1-AUTO-FAST.apk > spectradna-max-v3/SpectraDNA-Vault-MAX-v3.1-AUTO-FAST-SHA256.txt
-          ls -lh spectradna-max-v3/SpectraDNA-Vault-MAX-v3.1-AUTO-FAST.apk
+          cp buildsrc/SpectraDNA-Vault-MAX-v3/app/build/outputs/apk/debug/app-debug.apk spectradna-max-v3/SpectraDNA-Vault-MAX-v3.2-COMPACT-EXACT.apk
+          sha256sum spectradna-max-v3/SpectraDNA-Vault-MAX-v3.2-COMPACT-EXACT.apk > spectradna-max-v3/SpectraDNA-Vault-MAX-v3.2-COMPACT-EXACT-SHA256.txt
+          ls -lh spectradna-max-v3/SpectraDNA-Vault-MAX-v3.2-COMPACT-EXACT.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpectraDNA-Vault-MAX-v3.1-AUTO-FAST-APK
+          name: SpectraDNA-Vault-MAX-v3.2-COMPACT-EXACT-APK
           path: |
-            spectradna-max-v3/SpectraDNA-Vault-MAX-v3.1-AUTO-FAST.apk
-            spectradna-max-v3/SpectraDNA-Vault-MAX-v3.1-AUTO-FAST-SHA256.txt
+            spectradna-max-v3/SpectraDNA-Vault-MAX-v3.2-COMPACT-EXACT.apk
+            spectradna-max-v3/SpectraDNA-Vault-MAX-v3.2-COMPACT-EXACT-SHA256.txt
           if-no-files-found: error
 
       - name: Publish APK back to feature branch
@@ -107,6 +113,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- spectradna-max-v3/SpectraDNA-Vault-MAX-v3.1-AUTO-FAST.apk spectradna-max-v3/SpectraDNA-Vault-MAX-v3.1-AUTO-FAST-SHA256.txt
-          git commit -m "Build SpectraDNA MAX v3.1 AUTO FAST APK [skip ci]"
+          git add -- spectradna-max-v3/SpectraDNA-Vault-MAX-v3.2-COMPACT-EXACT.apk spectradna-max-v3/SpectraDNA-Vault-MAX-v3.2-COMPACT-EXACT-SHA256.txt
+          git commit -m "Build SpectraDNA MAX v3.2 COMPACT EXACT APK [skip ci]" || true
           git push origin HEAD:spectradna-max-v3
