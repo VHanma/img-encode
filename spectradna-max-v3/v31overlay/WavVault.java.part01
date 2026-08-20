@@ -1,0 +1,32 @@
+                        io[p++]=(byte)(ls&255);io[p++]=(byte)((ls>>>8)&255);io[p++]=(byte)(rs&255);io[p++]=(byte)((rs>>>8)&255);
+                    }
+                }
+                out.write(io,0,p);
+                if(cb!=null&&(baseFrame%(OfdmCodec.SYMBOL*8L)==0||baseFrame==grid.baseFrames))cb.onProgress((int)Math.min(99,100L*baseFrame/Math.max(1,grid.baseFrames)),"Encoding "+profile.suffix+" from shared protected grid");
+            }
+        }
+        out.flush();if(cb!=null)cb.onProgress(100,profile.suffix+" WAV complete");
+    }
+
+    private static short clip(double v){if(v>32767)v=32767;if(v<-32768)v=-32768;return(short)Math.round(v);}
+    private static short leftAt(short[]art,short[]rescue,long frame,long total,short secondary){double v=secondary*0.56;if(frame<art.length)v+=art[(int)frame]*0.34;long endStart=total-art.length;if(frame>=endStart&&frame<total)v+=art[(int)(frame-endStart)]*0.28;if(frame<rescue.length)v+=rescue[(int)frame]*0.50;return clip(v);}
+    private static void writeHeader(OutputStream out,long frames,int rate)throws IOException{long data=frames*4L,riff=36+data;writeAscii(out,"RIFF");le32(out,riff);writeAscii(out,"WAVE");writeAscii(out,"fmt ");le32(out,16);le16(out,1);le16(out,2);le32(out,rate);le32(out,rate*4L);le16(out,4);le16(out,16);writeAscii(out,"data");le32(out,data);}
+    private static void writeAscii(OutputStream out,String s)throws IOException{for(int i=0;i<s.length();i++)out.write((byte)s.charAt(i));}private static void le16(OutputStream out,long v)throws IOException{out.write((int)v&255);out.write((int)(v>>>8)&255);}private static void le32(OutputStream out,long v)throws IOException{for(int i=0;i<4;i++)out.write((int)(v>>>(8*i))&255);}
+
+    public static OfdmCodec.DecodeStats readAndDecode(InputStream rawIn,Progress cb)throws IOException{
+        BufferedInputStream in=new BufferedInputStream(rawIn,256*1024);byte[] h=new byte[44];readFully(in,h,0,h.length);if(!ascii(h,0,"RIFF")||!ascii(h,8,"WAVE")||!ascii(h,36,"data"))throw new IOException("Expected SpectraDNA stereo PCM WAV");int channels=u16le(h,22),rate=i32le(h,24),bits=u16le(h,34);long dataBytes=i32le(h,40)&0xffffffffL;if(channels!=2||bits!=16)throw new IOException("WAV must be stereo 16-bit PCM");
+        WavProfile profile;try{profile=WavProfile.fromRate(rate);}catch(IllegalArgumentException e){throw new IOException("Supported rates are 48, 96 and 192 kHz");}
+        int factor=profile.factor;long frames=dataBytes/4L,baseFrames=frames/factor,symbols=baseFrames/OfdmCodec.SYMBOL;
+        OfdmCodec.StreamDecoder main=new OfdmCodec.StreamDecoder();SecondaryOfdmCodec.Decoder sec=new SecondaryOfdmCodec.Decoder();byte[] frameBytes=new byte[OfdmCodec.SYMBOL*factor*4];short[] right=new short[OfdmCodec.SYMBOL],left=new short[OfdmCodec.SYMBOL];short[] rescueLeft=new short[(int)Math.min(baseFrames,RescueFsk.maxSamples())];int rescuePos=0;boolean mainActive=true;
+        for(long s=0;s<symbols;s++){
+            readFully(in,frameBytes,0,frameBytes.length);int maxRight=0;
+            for(int i=0;i<right.length;i++){
+                int p=i*factor*4;int llo=frameBytes[p]&255,lhi=frameBytes[p+1];left[i]=(short)(llo|(lhi<<8));if(rescuePos<rescueLeft.length)rescueLeft[rescuePos++]=left[i];int lo=frameBytes[p+2]&255,hi=frameBytes[p+3];right[i]=(short)(lo|(hi<<8));maxRight=Math.max(maxRight,Math.abs((int)right[i]));
+            }
+            if(mainActive){if(s>2&&maxRight<4)mainActive=false;else main.feed(right);}sec.feed(left);
+            if(cb!=null&&(s%8==0||s==symbols-1))cb.onProgress((int)Math.min(99,100L*s/Math.max(1,symbols)),"Decoding protected 48 kHz grid from "+profile.suffix);
+        }
+        OfdmCodec.DecodeStats ds=main.finish();SecondaryOfdmCodec.Result sr=sec.finish();ds.secondaryPacketStream=sr.packetStream;ds.secondaryHammingCorrected=sr.corrected;ds.secondaryHammingUncorrectable=sr.uncorrectable;ds.rescue=RescueFsk.decode(rescueLeft);if(cb!=null)cb.onProgress(100,"Dual modem decode complete");return ds;
+    }
+    private static boolean ascii(byte[]a,int off,String s){for(int i=0;i<s.length();i++)if((char)a[off+i]!=s.charAt(i))return false;return true;}private static int u16le(byte[]a,int o){return(a[o]&255)|((a[o+1]&255)<<8);}private static int i32le(byte[]a,int o){return(a[o]&255)|((a[o+1]&255)<<8)|((a[o+2]&255)<<16)|((a[o+3]&255)<<24);}private static void readFully(InputStream in,byte[]b,int off,int len)throws IOException{int p=0,n;while(p<len&&(n=in.read(b,off+p,len-p))>=0){if(n>0)p+=n;}if(p<len)throw new EOFException();}
+}
