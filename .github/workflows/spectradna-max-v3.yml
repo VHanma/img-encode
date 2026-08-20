@@ -1,0 +1,74 @@
+name: Build SpectraDNA MAX v3 BioWave
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - spectradna-max-v3
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and build tools
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Setup Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Unpack immutable v3 source snapshot
+        run: |
+          rm -rf buildsrc
+          mkdir -p buildsrc
+          unzip -q spectradna-max-v3/SpectraDNA-Vault-MAX-v3-BioWave-source.zip -d buildsrc
+          test -f buildsrc/SpectraDNA-Vault-MAX-v3/settings.gradle
+
+      - name: Core codec validation
+        working-directory: buildsrc/SpectraDNA-Vault-MAX-v3
+        run: |
+          rm -rf core-test-classes
+          mkdir core-test-classes
+          find app/src/main/java/com/vaan/spectradna -name '*.java' ! -name 'MainActivity.java' > core-files.txt
+          javac -d core-test-classes @core-files.txt tools/CodecSelfTest.java tools/WavSelfTest.java tools/BioWaveSelfTest.java
+          java -cp core-test-classes CodecSelfTest
+          java -cp core-test-classes WavSelfTest
+          java -cp core-test-classes BioWaveSelfTest
+
+      - name: Build installable APK
+        working-directory: buildsrc/SpectraDNA-Vault-MAX-v3
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Package APK and checksum
+        run: |
+          cp buildsrc/SpectraDNA-Vault-MAX-v3/app/build/outputs/apk/debug/app-debug.apk SpectraDNA-Vault-MAX-v3-BioWave.apk
+          sha256sum SpectraDNA-Vault-MAX-v3-BioWave.apk > SpectraDNA-Vault-MAX-v3-BioWave-SHA256.txt
+          ls -lh SpectraDNA-Vault-MAX-v3-BioWave.apk SpectraDNA-Vault-MAX-v3-BioWave-SHA256.txt
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpectraDNA-Vault-MAX-v3-BioWave-APK
+          path: |
+            SpectraDNA-Vault-MAX-v3-BioWave.apk
+            SpectraDNA-Vault-MAX-v3-BioWave-SHA256.txt
+          if-no-files-found: error
+          retention-days: 30
