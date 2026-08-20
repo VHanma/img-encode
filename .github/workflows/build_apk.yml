@@ -69,6 +69,7 @@ jobs:
         run: |
           ROOT=buildsrc/SpectraDNA-Vault-MAX-v3
           cp spectradna-max-v3/v32overlay/CompactArchive.java "$ROOT/app/src/main/java/com/vaan/spectradna/CompactArchive.java"
+          cp spectradna-max-v3/v32overlay/CompactV32SelfTest.java "$ROOT/tools/CompactV32SelfTest.java"
           python3 spectradna-max-v3/v32overlay/apply_v32.py "$ROOT"
           cp spectradna-max-v3/v32overlay/build.gradle "$ROOT/app/build.gradle"
           cp spectradna-max-v3/v32overlay/README.md "$ROOT/README.md"
@@ -84,10 +85,11 @@ jobs:
           rm -rf core-test-classes
           mkdir core-test-classes
           find app/src/main/java/com/vaan/spectradna -name '*.java' ! -name 'MainActivity.java' > core-files.txt
-          javac -d core-test-classes @core-files.txt tools/CodecSelfTest.java tools/WavSelfTest.java tools/BioWaveSelfTest.java
+          javac -d core-test-classes @core-files.txt tools/CodecSelfTest.java tools/WavSelfTest.java tools/BioWaveSelfTest.java tools/CompactV32SelfTest.java
           java -cp core-test-classes CodecSelfTest
           java -cp core-test-classes WavSelfTest
           java -cp core-test-classes BioWaveSelfTest
+          java -cp core-test-classes com.vaan.spectradna.CompactV32SelfTest
 
       - name: Build SpectraDNA v3.2 APK
         working-directory: buildsrc/SpectraDNA-Vault-MAX-v3
