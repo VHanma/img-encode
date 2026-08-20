@@ -46,7 +46,7 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Reassemble verified v3 base and apply v3.1 AUTO FAST patch
+      - name: Reassemble verified v3 base
         run: |
           rm -rf buildsrc
           mkdir -p buildsrc
@@ -56,12 +56,21 @@ jobs:
           test "$(stat -c%s /tmp/SpectraDNA-Vault-MAX-v3-BioWave-source.zip)" = "55588"
           unzip -t /tmp/SpectraDNA-Vault-MAX-v3-BioWave-source.zip
           unzip -q /tmp/SpectraDNA-Vault-MAX-v3-BioWave-source.zip -d buildsrc
-          cat spectradna-max-v3/v31patch/part*.patch > /tmp/spectradna-v31.patch
-          cd buildsrc/SpectraDNA-Vault-MAX-v3
-          patch -p1 < /tmp/spectradna-v31.patch
-          grep -q "3.1.0-auto-fast" app/build.gradle
-          grep -q "AUTO BUILD EVERYTHING" app/src/main/java/com/vaan/spectradna/MainActivity.java
-          grep -q "prepareGrid" app/src/main/java/com/vaan/spectradna/WavVault.java
+
+      - name: Install exact v3.1 AUTO FAST overlays and verify SHA-256
+        run: |
+          ROOT=buildsrc/SpectraDNA-Vault-MAX-v3
+          cat spectradna-max-v3/v31overlay/MainActivity.java.part* > "$ROOT/app/src/main/java/com/vaan/spectradna/MainActivity.java"
+          cat spectradna-max-v3/v31overlay/WavVault.java.part* > "$ROOT/app/src/main/java/com/vaan/spectradna/WavVault.java"
+          cp spectradna-max-v3/v31overlay/build.gradle "$ROOT/app/build.gradle"
+          cp spectradna-max-v3/v31overlay/README.md "$ROOT/README.md"
+          echo "d342d021fd3e5c418a4dd63b67832956dce08148a8cbb8b3c9525823a0378137  $ROOT/app/src/main/java/com/vaan/spectradna/MainActivity.java" | sha256sum -c -
+          echo "8c3a087daecf2feb0128698b8872abf518e6be784c399423a96763f90eff1a03  $ROOT/app/src/main/java/com/vaan/spectradna/WavVault.java" | sha256sum -c -
+          echo "6234ce1d3e5b67a56f7b9fafbf8195530f58f33aff9fb474ad20e83fa293e9a6  $ROOT/app/build.gradle" | sha256sum -c -
+          echo "eabba8478851eb414901db58ff8ac73187f099553a79b12377ad0c50375d45e9  $ROOT/README.md" | sha256sum -c -
+          grep -q "3.1.0-auto-fast" "$ROOT/app/build.gradle"
+          grep -q "AUTO BUILD EVERYTHING" "$ROOT/app/src/main/java/com/vaan/spectradna/MainActivity.java"
+          grep -q "prepareGrid" "$ROOT/app/src/main/java/com/vaan/spectradna/WavVault.java"
 
       - name: Run SpectraDNA codec self-tests
         working-directory: buildsrc/SpectraDNA-Vault-MAX-v3
