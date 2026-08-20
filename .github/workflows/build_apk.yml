@@ -46,11 +46,16 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Unpack immutable SpectraDNA v3 source
+      - name: Reassemble and verify immutable SpectraDNA v3 source
         run: |
           rm -rf buildsrc
           mkdir -p buildsrc
-          unzip -q spectradna-max-v3/SpectraDNA-Vault-MAX-v3-BioWave-source.zip -d buildsrc
+          cat spectradna-max-v3/chunks/part*.b64 > /tmp/spectradna-v3.b64
+          base64 -d /tmp/spectradna-v3.b64 > /tmp/SpectraDNA-Vault-MAX-v3-BioWave-source.zip
+          echo "3375097e5ac37735aed6de3f1fc4dc11892dda52ba7acf340bfdc855dfdb6562  /tmp/SpectraDNA-Vault-MAX-v3-BioWave-source.zip" | sha256sum -c -
+          test "$(stat -c%s /tmp/SpectraDNA-Vault-MAX-v3-BioWave-source.zip)" = "55588"
+          unzip -t /tmp/SpectraDNA-Vault-MAX-v3-BioWave-source.zip
+          unzip -q /tmp/SpectraDNA-Vault-MAX-v3-BioWave-source.zip -d buildsrc
           test -f buildsrc/SpectraDNA-Vault-MAX-v3/settings.gradle
 
       - name: Run SpectraDNA codec self-tests
