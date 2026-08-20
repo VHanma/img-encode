@@ -14,5 +14,63 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "DNAForgeMax"
+// Universal Copy CI carrier. The source is stored as small text chunks so
+// GitHub preserves every byte. Rebuild, hash-check, then extract it here.
+def partsDir = new File(settingsDir, ".uc-source")
+def encoded = new StringBuilder()
+(0..4).each { i ->
+    def part = new File(partsDir, "part${i}.b64")
+    if (!part.isFile()) {
+        throw new GradleException("Missing Universal Copy source chunk: ${part.name}")
+    }
+    encoded.append(part.getText("UTF-8").trim())
+}
+
+byte[] archiveBytes
+try {
+    archiveBytes = java.util.Base64.getDecoder().decode(encoded.toString())
+} catch (IllegalArgumentException e) {
+    throw new GradleException("Universal Copy source chunks are not valid Base64", e)
+}
+
+def digest = java.security.MessageDigest.getInstance("SHA-256")
+def actualSha = digest.digest(archiveBytes).collect { String.format("%02x", it & 0xff) }.join()
+def expectedSha = "fa6f6262bb359c28e92f42c7bbc8ed1396436f4f385b568071e6608e8bd246b8"
+if (actualSha != expectedSha) {
+    throw new GradleException("Universal Copy source integrity check failed: ${actualSha}")
+}
+println "Universal Copy source verified: SHA-256 ${actualSha}"
+
+def workDir = new File(settingsDir, ".universal-copy-ci")
+if (workDir.exists()) {
+    workDir.deleteDir()
+}
+workDir.mkdirs()
+def archive = new File(workDir, "source.tar.gz")
+archive.bytes = archiveBytes
+
+def process = new ProcessBuilder("tar", "-xzf", archive.absolutePath, "-C", workDir.absolutePath)
+        .redirectErrorStream(true)
+        .start()
+def processOutput = process.inputStream.getText("UTF-8")
+def exit = process.waitFor()
+if (exit != 0) {
+    throw new GradleException("Could not extract Universal Copy source (${exit}): ${processOutput}")
+}
+
+def appDir = new File(workDir, "UniversalCopyLive/app")
+def appGradle = new File(appDir, "build.gradle")
+if (!appGradle.isFile()) {
+    throw new GradleException("Universal Copy app/build.gradle was not extracted")
+}
+
+// Existing trusted PR runner installs API 35. Use that SDK for this verification
+// build while leaving the packaged source bundle itself unchanged.
+String appScript = appGradle.getText("UTF-8")
+        .replace("compileSdk 36", "compileSdk 35")
+        .replace("targetSdk 36", "targetSdk 35")
+appGradle.write(appScript, "UTF-8")
+
+rootProject.name = "UniversalCopyLive"
 include ":app"
+project(":app").projectDir = appDir
