@@ -1,0 +1,58 @@
++a.height+"  •  "+a.colorSpace+"\nOriginal SHA-256: "+ByteUtil.hex(a.originalSha)+"\nCanonical SHA-256: "+ByteUtil.hex(a.canonicalSha)+"\nRaw RGBA SHA-256: "+ByteUtil.hex(a.pixelSha)+"\nTile Merkle root: "+ByteUtil.hex(a.merkleRoot)+"\nTiles: "+a.tileHashes.length+"  •  original "+fmt(original.length)+"  •  protected archive "+fmt(comp.length)+"\n\n"+baseDetails());buildEverything();});
+     }catch(Exception e){fail(e);}});}
+ 
+     private void buildWav(Uri outUri){setBusy("Building MASTER WAV…");worker.execute(()->{try{writeMasterWav(outUri,WavProfile.PHONE_48);lastWavUri=outUri;runOnUiThread(()->{status.setText("AUDIO READY ✓");playBtn.setEnabled(true);shareBtn.setEnabled(true);playUri(outUri);});}catch(Exception e){fail(e);}});}
+@@ -139,7 +169,7 @@
+ 
+     private void saveDna(Uri uri){setBusy("Encoding dual-branch DNA MAX archive…");worker.execute(()->{try{try(OutputStream out=getContentResolver().openOutputStream(uri,"w")){DnaAdvancedCodec.encodeFasta(compressedArchive,out,maximumRecovery);}long bases=DnaAdvancedCodec.estimatedBases(compressedArchive.length,maximumRecovery);runOnUiThread(()->status.setText("DNA MAX EXPORTED ✓  "+fmtCount(bases)+" bases"));}catch(Exception e){fail(e);}});}
+ 
+-    private void importDna(Uri uri){setBusy("Consensus-style DNA ensemble recovery…");worker.execute(()->{try{DnaAdvancedCodec.DecodeResult dr;try(InputStream in=getContentResolver().openInputStream(uri)){byte[] dnaText=ByteUtil.readAll(in);String head=new String(dnaText,0,Math.min(dnaText.length,180),"US-ASCII");if(!head.contains(">SpectraDNA-MAX")){if(head.matches("(?s).*\\b[0-9a-fA-F]{64}\\b.*"))throw new IOException("That is a SHA-256 checksum file, not a DNA MAX archive");throw new IOException("This text file is not a SpectraDNA MAX DNA archive");}dr=DnaAdvancedCodec.decodeFasta(new ByteArrayInputStream(dnaText));}ArchiveContainer a=ArchiveContainer.parse(ArchiveContainer.inflate(dr.data));verifyBitmapAgainstArchive(a);recoveredArchive=a;currentArchive=a;compressedArchive=dr.data;Bitmap canon=BitmapFactory.decodeByteArray(a.canonicalPng,0,a.canonicalPng.length);Bitmap small=Bitmap.createScaledBitmap(canon,224,128,true);int[] px=new int[224*128];small.getPixels(px,0,224,0,0,224,128);spectrogramArt=SpectrogramArt.renderMax(px,224,128);pendingWavName=safeBase(a.fileName)+"-SpectraDNA-MAX.wav";lastWavUri=null;runOnUiThread(()->{preview.setImageBitmap(canon);enableRecoverySaves(a);wavBtn.setEnabled(true);phoneBtn.setEnabled(true);archiveBtn.setEnabled(true);labWavBtn.setEnabled(true);playBtn.setEnabled(false);shareBtn.setEnabled(false);status.setText("DNA → PIXEL-PERFECT VERIFIED ✓  •  AUDIO READY TO BUILD");details.setText("DENSE valid: "+dr.validDense+"  •  SYNC valid: "+dr.validSync+"\nRejected/damaged records: "+dr.badRecords+"  •  parity-recovered shards: "+dr.recoveredShards+"\nCanonical SHA-256: "+ByteUtil.hex(a.canonicalSha)+"\nRaw RGBA SHA-256: "+ByteUtil.hex(a.pixelSha)+"\nTile Merkle root: "+ByteUtil.hex(a.merkleRoot)+"\n\nTap GENERATE MASTER AUDIO WAV to rebuild the actual sound.");});}catch(Exception e){fail(e);}});}
++    private void importDna(Uri uri){setBusy("Consensus-style DNA ensemble recovery…");worker.execute(()->{try{DnaAdvancedCodec.DecodeResult dr;try(InputStream in=getContentResolver().openInputStream(uri)){byte[] dnaText=ByteUtil.readAll(in);String head=new String(dnaText,0,Math.min(dnaText.length,180),"US-ASCII");if(!head.contains(">SpectraDNA-MAX")){if(head.matches("(?s).*\\b[0-9a-fA-F]{64}\\b.*"))throw new IOException("That is a SHA-256 checksum file, not a DNA MAX archive");throw new IOException("This text file is not a SpectraDNA MAX DNA archive");}dr=DnaAdvancedCodec.decodeFasta(new ByteArrayInputStream(dnaText));}ArchiveContainer a=ArchiveContainer.parse(ArchiveContainer.inflate(dr.data));verifyBitmapAgainstArchive(a);recoveredArchive=a;currentArchive=a;compressedArchive=dr.data;Bitmap canon=BitmapFactory.decodeByteArray(a.canonicalPng,0,a.canonicalPng.length);Bitmap small=Bitmap.createScaledBitmap(canon,224,128,true);int[] px=new int[224*128];small.getPixels(px,0,224,0,0,224,128);spectrogramArt=SpectrogramArt.renderMax(px,224,128);pendingWavName=safeBase(a.fileName)+"-SpectraDNA-MAX.wav";lastWavUri=null;runOnUiThread(()->{preview.setImageBitmap(canon);enableRecoverySaves(a);wavBtn.setEnabled(true);phoneBtn.setEnabled(true);archiveBtn.setEnabled(true);labWavBtn.setEnabled(true);playBtn.setEnabled(false);shareBtn.setEnabled(false);status.setText("DNA → PIXEL-PERFECT VERIFIED ✓  AUTO REBUILD STARTING…");details.setText("DENSE valid: "+dr.validDense+"  •  SYNC valid: "+dr.validSync+"\nRejected/damaged records: "+dr.badRecords+"  •  parity-recovered shards: "+dr.recoveredShards+"\nCanonical SHA-256: "+ByteUtil.hex(a.canonicalSha)+"\nRaw RGBA SHA-256: "+ByteUtil.hex(a.pixelSha)+"\nTile Merkle root: "+ByteUtil.hex(a.merkleRoot)+"\n\nAudio, DNA and manifests rebuild automatically.");buildEverything();});}catch(Exception e){fail(e);}});}
+ 
+     private void runLab(){if(compressedArchive==null)return;setBusy("Destruction Lab attacking sacrificial copies…");worker.execute(()->{try{RecoveryLab.Report r=RecoveryLab.run(compressedArchive);runOnUiThread(()->{status.setText("DESTRUCTION LAB  "+r.score()+"%"+(r.score()==100?" ✓":""));details.setText(r.toString()+"\nA failed row is kept visible rather than hidden. It identifies the next recovery layer to strengthen.");});}catch(Exception e){fail(e);}});}
+ 
+@@ -153,5 +183,5 @@
+     private String fmtCount(long n){if(n>=1_000_000_000L)return String.format("%.2fB",n/1e9);if(n>=1_000_000L)return String.format("%.2fM",n/1e6);if(n>=1000)return String.format("%.1fk",n/1000.0);return Long.toString(n);}
+     private void setBusy(String s){runOnUiThread(()->status.setText(s));}
+     private void fail(Exception e){runOnUiThread(()->{status.setText("ERROR: "+e.getMessage());details.setText(android.util.Log.getStackTraceString(e));});}
+-    @Override protected void onDestroy(){super.onDestroy();if(player!=null){try{player.stop();}catch(Exception ignored){}player.release();player=null;}worker.shutdownNow();}
++    @Override protected void onDestroy(){super.onDestroy();if(player!=null){try{player.stop();}catch(Exception ignored){}player.release();player=null;}worker.shutdownNow();auxWorker.shutdownNow();}
+ }
+--- a/app/src/main/java/com/vaan/spectradna/WavVault.java
++++ b/app/src/main/java/com/vaan/spectradna/WavVault.java
+@@ -5,77 +5,113 @@
+ /**
+  * SpectraDNA MAX WAV container.
+  *
+- * Protected 48 kHz grid:
+- *  left  = deterministic spectrogram + BFSK rescue + secondary QPSK modem
+- *  right = primary frequency-diverse QPSK modem
+- *
+- * 96/192 kHz profiles preserve every protected-grid sample exactly and place
+- * experimental sonification only in the interstitial samples. Decoding simply
+- * selects the protected grid, so the added layers cannot alter file-domain
+- * recovery of either modem.
++ * MAX v3.1 FAST builds the expensive protected 48 kHz acoustic grid once,
++ * then reuses that exact grid for the 48/96/192 kHz masters. High-rate
++ * experimental sonification remains interstitial, so exact recovery quality
++ * and redundancy are unchanged while duplicate OFDM work is removed.
+  */
+ public final class WavVault {
+     private WavVault(){}
+     public interface Progress{void onProgress(int percent,String phase);}
++
++    public static final class PreparedGrid implements Closeable {
++        final File file;
++        final short[] art;
++        public final long baseFrames;
++        public final int rescueSamples;
++        public final long byteLength;
++        private PreparedGrid(File file,short[] art,long baseFrames,int rescueSamples){
++            this.file=file;this.art=art;this.baseFrames=baseFrames;this.rescueSamples=rescueSamples;this.byteLength=baseFrames*4L;
++        }
++        @Override public void close(){if(file!=null&&!file.delete())file.deleteOnExit();}
++    }
+ 
+     /** Backward-compatible phone master. */
+     public static void write(OutputStream rawOut,short[] art,byte[] primaryTransport,byte[] secondaryTransport,byte[] rescueHeader,Progress cb)throws IOException{
+         writeProfile(rawOut,art,primaryTransport,se
