@@ -29,13 +29,13 @@ public final class CompactV32SelfTest {
 
         short[] art = new short[4096];
         for (int i=0;i<art.length;i++) art[i]=(short)Math.round(Math.sin(i*0.071)*7000.0);
-        ByteArrayOutputStream wav = new ByteArrayOutputStream(4*1024*1024);
+        ByteArrayOutputStream wav = new ByteArrayOutputStream(3*1024*1024);
         WavVault.writeCompactProfile(wav, art, packed, WavProfile.PHONE_48, 0, null);
         byte[] wavBytes = wav.toByteArray();
 
-        long expectedPcm = Math.round(18.0 * 48000.0) * 4L;
+        long expectedPcm = Math.round(12.0 * 48000.0) * 4L;
         require(wavBytes.length >= 44L + expectedPcm + packed.length, "compact WAV unexpectedly small/truncated");
-        require(wavBytes.length < 4_000_000, "compact WAV exceeded 4 MB regression ceiling for tiny payload: "+wavBytes.length);
+        require(wavBytes.length < 3_000_000, "compact WAV exceeded 3 MB regression ceiling for tiny payload: "+wavBytes.length);
 
         byte[] recovered = WavVault.readEmbeddedArchive(new ByteArrayInputStream(wavBytes));
         require(Arrays.equals(packed, recovered), "embedded sDNA archive mismatch");
@@ -56,7 +56,7 @@ public final class CompactV32SelfTest {
         require(rejected, "corrupted sDNA payload was not rejected");
 
         System.out.println("SpectraDNA v3.2 COMPACT EXACT self-test: PASS");
-        System.out.println("18 s 48 kHz compact test WAV bytes: "+wavBytes.length);
+        System.out.println("12 s 48 kHz compact test WAV bytes: "+wavBytes.length);
         System.out.println("Exact embedded archive bytes: "+packed.length);
     }
 
