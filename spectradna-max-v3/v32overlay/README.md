@@ -15,7 +15,7 @@ After one image selection the app automatically creates:
 - one 48 kHz stereo WAV in `Music/SpectraDNA`
 - one small SHA/Merkle manifest in `Downloads/SpectraDNA`
 
-The normal master uses an **18-second playable timeline**. It contains the deterministic visible-spectrogram/BioWave sonification and a custom RIFF `sDNA` chunk carrying the compressed exact source archive.
+The normal master uses a **12-second playable timeline**, exactly one global firefly phase-lock cycle. It contains the deterministic visible-spectrogram/BioWave sonification and a custom RIFF `sDNA` chunk carrying the compressed exact source archive.
 
 The `sDNA` chunk contains:
 
@@ -71,7 +71,7 @@ The biological/fringe-inspired layer remains separate from the exact codec. It c
 
 ### Firefly phase-lock recipe
 
-The compact timeline now contains a deterministic pulse-synchronization envelope inspired by measured synchronous-firefly timing:
+The compact timeline contains a deterministic pulse-synchronization envelope inspired by measured synchronous-firefly timing:
 
 - 125 ms representative flash pulse
 - approximately 0.55 s spacing
@@ -79,7 +79,7 @@ The compact timeline now contains a deterministic pulse-synchronization envelope
 - 12 s global cycle
 - archive-derived phase offset, so different images produce deterministic but distinct phase placement
 
-This borrows a biological oscillator/synchronization strategy. The APK produces audio modulation, not literal firefly light.
+The whole compact master now fits one complete 12-second synchronization cycle. The APK produces audio modulation, not literal firefly light.
 
 ### Levin-related timing palette
 
@@ -120,14 +120,14 @@ They remain exploratory layers while the exact image-recovery path is tested ind
 
 ## Storage target
 
-For the default 48 kHz stereo 16-bit compact master, 18 seconds of PCM is about **3.46 MB**, plus the compressed exact image archive and a small RIFF overhead. The APK no longer automatically creates the 96 kHz, 192 kHz and DNA-text duplicates.
+For the default 48 kHz stereo 16-bit compact master, 12 seconds of PCM is about **2.30 MB**, plus the compressed exact image archive and small RIFF overhead. The APK no longer automatically creates the 96 kHz, 192 kHz and DNA-text duplicates.
 
-That means the output size now scales mostly with:
+That means output size now scales mostly with:
 
-`~3.46 MB audio body + exact source archive`
+`~2.30 MB audio body + exact source archive`
 
 rather than with hours of PCM multiplied across several masters.
 
 ## Build validation
 
-The GitHub workflow still runs the existing codec/self-test suite, then compiles the v3.2 overlay and APK. The full v3.1 acoustic decoder is retained for AIR FORTRESS and legacy recovery.
+The GitHub workflow runs the existing codec/self-test suite plus the v3.2 compact regression test. That test generates the 12-second WAV, extracts and verifies the exact embedded archive, then corrupts the embedded payload and requires CRC/SHA rejection before the Android APK is built. The full v3.1 acoustic decoder remains available for AIR FORTRESS and legacy recovery.
