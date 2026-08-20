@@ -1,0 +1,76 @@
+w GradientDrawable();g.setColor(Color.rgb(140,255,176));g.setCornerRadius(dp(13));b.setBackground(g);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,dp(55));p.topMargin=dp(9);b.setLayoutParams(p);return b;}
+     private CheckBox layerCheck(String label,int bit){CheckBox c=new CheckBox(this);c.setText(label);c.setTextColor(Color.LTGRAY);c.setChecked(true);c.setOnCheckedChangeListener((b,on)->{if(on)bioOptions|=bit;else bioOptions&=~bit;});return c;}
+     private TextView text(String s,int size,int color){TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(color);return t;}
+@@ -70,29 +73,53 @@
+     private void createWavDocument(){generateProfileWav(WavProfile.PHONE_48,true);}
+     private void generateMasterWav(){generateProfileWav(WavProfile.PHONE_48,true);}
+ 
++    private static final class BuildPlan implements Closeable {
++        final byte[] primary,secondary,rescue; final WavVault.PreparedGrid grid; final double minutes;
++        BuildPlan(byte[] p,byte[] s,byte[] r,WavVault.PreparedGrid g,double m){primary=p;secondary=s;rescue=r;grid=g;minutes=m;}
++        @Override public void close(){if(grid!=null)grid.close();}
++    }
++
++    private BuildPlan prepareBuildPlan()throws Exception{
++        byte[] transport=OuterTransport.build(compressedArchive,maximumRecovery),secondary=SecondaryTransport.build(compressedArchive),rescue=RescueFsk.header(compressedArchive,currentArchive.width,currentArchive.height);
++        File cache=new File(getCacheDir(),"spectradna-grid-"+System.nanoTime()+".pcm");
++        WavVault.PreparedGrid grid=WavVault.prepareGrid(cache,spectrogramArt,transport,secondary,rescue,(p,phase)->setWeightedProgress(2,20,p,phase));
++        return new BuildPlan(transport,secondary,rescue,grid,grid.baseFrames/(double)OfdmCodec.SAMPLE_RATE/60.0);
++    }
++
+     private void generateProfileWav(WavProfile profile,boolean autoPlay){
+         if(compressedArchive==null||spectrogramArt==null){status.setText("SELECT AN IMAGE FIRST");return;}
+-        setBusy("Creating "+profile.suffix+" actual WAV audio…");
+-        worker.execute(()->{Uri outUri=null;try{
++        if(buildInProgress){status.setText("AUTO BUILD IS ALREADY RUNNING");return;}
++        setBuildState(true,"Preparing shared recovery grid…");
++        worker.execute(()->{Uri outUri=null;try(BuildPlan plan=prepareBuildPlan()){
+             outUri=createAudioUri(profile);
+-            writeMasterWav(outUri,profile);
++            writeMasterWav(outUri,profile,plan,20,98);
+             finishPending(outUri);wavUris.put(profile,outUri);lastWavUri=outUri;final Uri ready=outUri;
+-            runOnUiThread(()->{status.setText(profile.suffix+" AUDIO READY ✓");playBtn.setEnabled(true);shareBtn.setEnabled(true);details.append("\n\nWAV SAVED: Music/SpectraDNA/"+nameFor(profile));if(autoPlay)playUri(ready);});
+-        }catch(Exception e){if(outUri!=null)try{getContentResolver().delete(outUri,null,null);}catch(Exception ignored){}fail(e);}});
++            runOnUiThread(()->{status.setText(profile.suffix+" AUDIO READY ✓");progress.setProgress(100);playBtn.setEnabled(true);shareBtn.setEnabled(true);details.append("\n\nWAV SAVED: Music/SpectraDNA/"+nameFor(profile));if(autoPlay)playUri(ready);setBuildStateUi(false);});
++        }catch(Exception e){if(outUri!=null)try{getContentResolver().delete(outUri,null,null);}catch(Exception ignored){}setBuildStateUi(false);fail(e);}});
+     }
+ 
+     private void buildEverything(){
+         if(compressedArchive==null||spectrogramArt==null){status.setText("SELECT AN IMAGE FIRST");return;}
+-        setBusy("MAX BUILD: creating 48/96/192 kHz audio + DNA + manifest…");
+-        worker.execute(()->{ArrayList<Uri> made=new ArrayList<>();try{
+-            for(WavProfile profile:WavProfile.values()){
+-                final WavProfile fp=profile;runOnUiThread(()->status.setText("MAX BUILD: "+fp.suffix));
+-                Uri u=createAudioUri(profile);made.add(u);writeMasterWav(u,profile);finishPending(u);wavUris.put(profile,u);if(profile==WavProfile.PHONE_48)lastWavUri=u;
+-            }
+-            Uri dna=createTextUri("SpectraDNA-MAX-archive.fasta.txt","text/plain");made.add(dna);try(OutputStream out=getContentResolver().openOutputStream(dna,"w")){DnaAdvancedCodec.encodeFasta(compressedArchive,out,maximumRecovery);}finishPending(dna);
+-            String manifest=buildManifest();Uri man=createTextUri(safeBase(currentArchive.fileName)+"-SpectraDNA-MANIFEST.txt","text/plain");made.add(man);try(OutputStream out=getContentResolver().openOutputStream(man,"w")){out.write(manifest.getBytes("UTF-8"));}finishPending(man);
+-            runOnUiThread(()->{status.setText("MAX BUILD COMPLETE ✓  3 WAV + DNA + MANIFEST");playBtn.setEnabled(lastWavUri!=null);shareBtn.setEnabled(lastWavUri!=null);details.append("\n\nBUILD EVERYTHING COMPLETE\nMusic/SpectraDNA: PHONE 48k, ARCHIVE 96k, LAB 192k\nDownloads/SpectraDNA: DNA MAX + manifest");if(lastWavUri!=null)playUri(lastWavUri);});
+-        }catch(Exception e){fail(e);}});
++        if(buildInProgress){status.setText("AUTO BUILD IS ALREADY RUNNING");return;}
++        setBuildState(true,"AUTO MAX: preparing one shared protected grid…");
++        worker.execute(()->{ArrayList<Uri> made=new ArrayList<>();Future<?> aux=null;try(BuildPlan plan=prepareBuildPlan()){
++            final String stats=String.format("Primary %s • secondary %s • %.1f min protected timeline",fmt(plan.primary.length),fmt(plan.secondary.length),plan.minutes);
++            runOnUiThread(()->details.append("\n\nAUTO FAST BUILD\n"+stats+"\nProtected grid computed once and reused ×3."));
++
++            // DNA + manifest are independent of WAV rendering, so do them while audio is being written.
++            aux=auxWorker.submit(()->{try{
++                Uri dna=createTextUri("SpectraDNA-MAX-archive.fasta.txt","text/plain");synchronized(made){made.add(dna);}try(OutputStream out=getContentResolver().openOutputStream(dna,"w")){DnaAdvancedCodec.encodeFasta(compressedArchive,out,maximumRecovery);}finishPending(dna);
++                String manifest=buildManifest();Uri man=createTextUri(safeBase(currentArchive.fileName)+"-SpectraDNA-MANIFEST.txt","text/plain");synchronized(made){made.add(man);}try(OutputStream out=getContentResolver().openOutputStream(man,"w")){out.write(manifest.getBytes("UTF-8"));}finishPending(man);
++            }catch(Exception e){throw new CompletionException(e);}});
++
++            Uri phone=createAudioUri(WavProfile.PHONE_48);made.add(phone);writeMasterWav(phone,WavProfile.PHONE_48,plan,20,47);finishPending(phone);wavUris.put(WavProfile.PHONE_48,phone);lastWavUri=phone;
++            runOnUiThread(()->{playBtn.setEnabled(true);shareBtn.setEnabled(true);status.setText("PHONE AUDIO READY ▶  •  finishing 96/192 kHz + DNA automatically");playUri(phone);});
++
++            Uri archive=createAudioUri(WavProfile.ARCHIVE_96);made.add(archive);writeMasterWav(archive,WavProfile.ARCHIVE_96,plan,47,68);finishPending(archive);wavUris.put(WavProfile.ARCHIVE_96,archive);
++            Uri lab=createAudioUri(WavProfile.LAB_192);made.add(lab);writeMasterWav(lab,WavProfile.LAB_192,plan,68,94);finishPending(lab);wavUris.put(WavProfile.LAB_192,lab);
++            if(aux!=null)aux.get();
++            runOnUiThread(()->{progress.setProgress(100);status.setText("EVERYTHING COMPLETE ✓  AUDIO + 96k + 192k + DNA + MANIFEST");details.append("\n\nAUTO BUILD COMPLETE\nMusic/SpectraDNA: PHONE 48k, ARCHIVE 96k, LAB 192k\nDownloads/SpectraDNA: DNA MAX + manifest\nNo extra taps required.");setBuildStateUi(false);});
++        }catch(Exception e){if(aux!=null)aux.cancel(true);setBuildStateUi(false);fail(e instanceof ExecutionException&&e.getCause() instanceof Exception?(Exception)e.getCause():e);}});
+     }
+ 
+     private Uri createAudioUri(WavProfile profile)throws IOException{
+@@ -107,16 +134,19 @@
+     }
+     private void finishPending(Uri u){if(Build.VERSION.SDK_INT>=29){ContentValues done=new ContentValues();done.put(MediaStore.MediaColumns.IS_PENDING,0);getContentResolver().update(u,done,null,null);}}
+     private String nameFor(WavProfile p){return safeBase(currentArchive==null?"image":curr
