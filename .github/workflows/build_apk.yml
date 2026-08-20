@@ -7,6 +7,9 @@ on:
       - master
       - main
       - spectradna-max-v3
+  pull_request:
+    branches:
+      - master
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -81,6 +84,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publish APK back to feature branch
+        if: github.event_name != 'pull_request'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
