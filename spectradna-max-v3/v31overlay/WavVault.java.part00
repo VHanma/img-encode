@@ -1,0 +1,108 @@
+package com.vaan.spectradna;
+
+import java.io.*;
+
+/**
+ * SpectraDNA MAX WAV container.
+ *
+ * MAX v3.1 FAST builds the expensive protected 48 kHz acoustic grid once,
+ * then reuses that exact grid for the 48/96/192 kHz masters. High-rate
+ * experimental sonification remains interstitial, so exact recovery quality
+ * and redundancy are unchanged while duplicate OFDM work is removed.
+ */
+public final class WavVault {
+    private WavVault(){}
+    public interface Progress{void onProgress(int percent,String phase);}
+
+    public static final class PreparedGrid implements Closeable {
+        final File file;
+        final short[] art;
+        public final long baseFrames;
+        public final int rescueSamples;
+        public final long byteLength;
+        private PreparedGrid(File file,short[] art,long baseFrames,int rescueSamples){
+            this.file=file;this.art=art;this.baseFrames=baseFrames;this.rescueSamples=rescueSamples;this.byteLength=baseFrames*4L;
+        }
+        @Override public void close(){if(file!=null&&!file.delete())file.deleteOnExit();}
+    }
+
+    /** Backward-compatible phone master. */
+    public static void write(OutputStream rawOut,short[] art,byte[] primaryTransport,byte[] secondaryTransport,byte[] rescueHeader,Progress cb)throws IOException{
+        writeProfile(rawOut,art,primaryTransport,secondaryTransport,rescueHeader,primaryTransport,WavProfile.PHONE_48,BioWaveCarrier.ALL,cb);
+    }
+
+    /** Legacy single-profile entry point, now internally using the shared-grid path. */
+    public static void writeProfile(OutputStream rawOut,short[] art,byte[] primaryTransport,byte[] secondaryTransport,byte[] rescueHeader,byte[] archive,WavProfile profile,int bioOptions,Progress cb)throws IOException{
+        File tmp=File.createTempFile("spectradna-grid-",".pcm");
+        PreparedGrid grid=null;
+        try{
+            grid=prepareGrid(tmp,art,primaryTransport,secondaryTransport,rescueHeader,cb);
+            writeProfileFromGrid(rawOut,grid,archive,profile,bioOptions,cb);
+        }finally{if(grid!=null)grid.close();else tmp.delete();}
+    }
+
+    /**
+     * Render the exact, reusable 48 kHz stereo protection grid once.
+     * File format is raw little-endian stereo PCM16: left then right.
+     */
+    public static PreparedGrid prepareGrid(File file,short[] art,byte[] primaryTransport,byte[] secondaryTransport,byte[] rescueHeader,Progress cb)throws IOException{
+        if(file==null)throw new IOException("Missing protected-grid cache file");
+        OfdmCodec.Encoder main=new OfdmCodec.Encoder(primaryTransport);
+        SecondaryOfdmCodec.Encoder sec=new SecondaryOfdmCodec.Encoder(secondaryTransport);
+        short[] rescue=RescueFsk.encode(rescueHeader);
+        int mainSymbols=main.totalSymbols(),secSymbols=sec.totalSymbols(),activeSymbols=Math.max(mainSymbols,secSymbols);
+        long activeBaseFrames=(long)activeSymbols*OfdmCodec.SYMBOL;
+        long baseFrames=Math.max(activeBaseFrames,Math.max((long)art.length*2L,rescue.length));
+        try(BufferedOutputStream out=new BufferedOutputStream(new FileOutputStream(file),1024*1024)){
+            byte[] io=new byte[OfdmCodec.SYMBOL*4];
+            short[] zeros=new short[OfdmCodec.SYMBOL];
+            long baseFrame=0;
+            for(int s=0;s<activeSymbols;s++){
+                short[] right=s<mainSymbols?main.symbol(s):zeros;
+                short[] high=s<secSymbols?sec.symbol(s):zeros;
+                int p=0;
+                for(int i=0;i<OfdmCodec.SYMBOL;i++,baseFrame++){
+                    short l=leftAt(art,rescue,baseFrame,baseFrames,high[i]),r=right[i];
+                    io[p++]=(byte)(l&255);io[p++]=(byte)((l>>>8)&255);io[p++]=(byte)(r&255);io[p++]=(byte)((r>>>8)&255);
+                }
+                out.write(io,0,p);
+                if(cb!=null&&(s%8==0||s==activeSymbols-1))cb.onProgress((int)Math.min(99,100L*s/Math.max(1,activeSymbols)),"Preparing shared 48 kHz protected grid");
+            }
+            while(baseFrame<baseFrames){
+                int count=(int)Math.min(OfdmCodec.SYMBOL,baseFrames-baseFrame),p=0;
+                for(int i=0;i<count;i++,baseFrame++){
+                    short l=leftAt(art,rescue,baseFrame,baseFrames,(short)0);
+                    io[p++]=(byte)(l&255);io[p++]=(byte)((l>>>8)&255);io[p++]=0;io[p++]=0;
+                }
+                out.write(io,0,p);
+            }
+            out.flush();
+        }
+        if(cb!=null)cb.onProgress(100,"Shared protected grid ready");
+        return new PreparedGrid(file,art,baseFrames,rescue.length);
+    }
+
+    /** Build a master from the already-computed protected grid. */
+    public static void writeProfileFromGrid(OutputStream rawOut,PreparedGrid grid,byte[] archive,WavProfile profile,int bioOptions,Progress cb)throws IOException{
+        if(grid==null||grid.file==null||!grid.file.isFile())throw new IOException("Protected-grid cache is unavailable");
+        long frames=grid.baseFrames*profile.factor;
+        long dataBytes=frames*4L;
+        if(dataBytes>0xffffffffL-36)throw new IOException("WAV exceeds classic RIFF 4 GB limit");
+        BufferedOutputStream out=new BufferedOutputStream(rawOut,1024*1024);
+        writeHeader(out,frames,profile.sampleRate);
+        BioWaveCarrier bio=new BioWaveCarrier(archive,grid.art,profile.sampleRate,frames,bioOptions);
+        byte[] baseBytes=new byte[OfdmCodec.SYMBOL*4];
+        byte[] io=new byte[OfdmCodec.SYMBOL*profile.factor*4];
+        long baseFrame=0,outFrame=0;
+        try(BufferedInputStream in=new BufferedInputStream(new FileInputStream(grid.file),1024*1024)){
+            while(baseFrame<grid.baseFrames){
+                int count=(int)Math.min(OfdmCodec.SYMBOL,grid.baseFrames-baseFrame);
+                readFully(in,baseBytes,0,count*4);
+                int p=0;
+                for(int i=0;i<count;i++,baseFrame++){
+                    int q=i*4;short baseLeft=(short)((baseBytes[q]&255)|(baseBytes[q+1]<<8));short baseRight=(short)((baseBytes[q+2]&255)|(baseBytes[q+3]<<8));
+                    for(int sub=0;sub<profile.factor;sub++,outFrame++){
+                        double l=baseLeft,r=baseRight;
+                        boolean allowBio=profile.factor>1 || baseFrame>=grid.rescueSamples;
+                        if(allowBio){l+=bio.sample(outFrame,false)*6200.0;r+=bio.sample(outFrame,true)*6200.0;}
+                        short ls=clip(l),rs=clip(r);
