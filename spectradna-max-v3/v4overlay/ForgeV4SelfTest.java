@@ -9,14 +9,29 @@ public final class ForgeV4SelfTest {
         TriStrandCodec.Result r=TriStrandCodec.encode(data);
         require(r.binaryBits==data.length*8L,"binary length");
         require(r.alpha.length()==data.length*4,"alpha length");
-        require(r.beta.length()==r.alpha.length(),"beta length");
-        require(r.gamma.length()>r.alpha.length()/3,"gamma parity/sync length");
-        require(r.fasta.contains("ALPHA_DATA")&&r.fasta.contains("BETA_COMPLEMENT")&&r.fasta.contains("GAMMA_PARITY"),"FASTA headers");
-        require(TriStrandCodec.previewText(data).contains("A=00  C=01  G=10  T=11"),"preview mapping");
-        ByteArrayOutputStream out=new ByteArrayOutputStream();TriStrandCodec.writeFasta(data,out);require(out.size()>data.length,"fasta export");
-        TriStrandSignal sig=new TriStrandSignal(data,48000);double energy=0;for(int i=0;i<48000;i+=37){double v=sig.sample(i,false);require(Double.isFinite(v),"finite signal");energy+=v*v;}require(energy>0.01,"tri-strand signal energy");
-        System.out.println("SpectraDNA Forge v4 tri-strand self-test: PASS");
-        System.out.println("Alpha="+r.alpha.length()+" Beta="+r.beta.length()+" Gamma="+r.gamma.length()+" FASTA="+out.size());
+        require(r.gamma.length()==r.alpha.length(),"gamma full redundant length");
+        require(r.theta.length()==data.length,"theta support length");
+        require(r.delta.length()>0&&r.delta.length()<r.theta.length(),"delta sparse support");
+        require(r.theta.length()<r.alpha.length()&&r.delta.length()<r.alpha.length(),"support lanes subordinate");
+        require(r.fasta.contains("ALPHA_PRIMARY_EXACT")&&r.fasta.contains("GAMMA_REDUNDANT_FULL")&&r.fasta.contains("THETA_PARITY_SUPPORT")&&r.fasta.contains("DELTA_SYNC_SUPPORT"),"FASTA headers");
+        require(!r.fasta.toUpperCase(Locale.ROOT).contains("BE"+"TA"),"forbidden lane absent from FASTA");
+        String preview=TriStrandCodec.previewText(data);
+        require(preview.contains("A=00  C=01  G=10  T=11"),"preview mapping");
+        require(!preview.toUpperCase(Locale.ROOT).contains("BE"+"TA"),"forbidden lane absent from preview");
+
+        ByteArrayOutputStream out=new ByteArrayOutputStream();
+        TriStrandCodec.writeFasta(data,out);
+        String streamed=out.toString("US-ASCII");
+        require(streamed.contains("ALPHA_PRIMARY_EXACT")&&streamed.contains("GAMMA_REDUNDANT_FULL"),"streamed export");
+        require(!streamed.toUpperCase(Locale.ROOT).contains("BE"+"TA"),"forbidden lane absent from streamed export");
+
+        TriStrandSignal sig=new TriStrandSignal(data,48000);
+        require(!TriStrandSignal.mixDescription().toUpperCase(Locale.ROOT).contains("BE"+"TA"),"forbidden lane absent from signal description");
+        double energy=0;for(int i=0;i<48000;i+=37){double v=sig.sample(i,false);require(Double.isFinite(v),"finite signal");energy+=v*v;}
+        require(energy>0.01,"genome signal energy");
+
+        System.out.println("SpectraDNA Forge v4 Alpha/Gamma genome self-test: PASS");
+        System.out.println("Alpha="+r.alpha.length()+" Gamma="+r.gamma.length()+" Theta="+r.theta.length()+" Delta="+r.delta.length()+" FASTA="+out.size());
     }
     private static void require(boolean ok,String msg){if(!ok)throw new AssertionError(msg);}
 }
