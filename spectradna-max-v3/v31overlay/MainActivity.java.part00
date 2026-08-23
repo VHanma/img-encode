@@ -1,0 +1,63 @@
+package com.vaan.spectradna;
+
+import android.app.*;
+import android.os.*;
+import android.content.*;
+import android.database.Cursor;
+import android.graphics.*;
+import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
+import android.media.MediaPlayer;
+import android.provider.OpenableColumns;
+import android.provider.MediaStore;
+import android.view.*;
+import android.widget.*;
+
+import java.io.*;
+import java.util.concurrent.*;
+import java.util.*;
+
+public class MainActivity extends Activity {
+    private static final int PICK_IMAGE=10,SAVE_WAV=11,PICK_WAV=12,SAVE_DNA=13,PICK_DNA=14,SAVE_PNG=15,SAVE_ORIGINAL=16;
+    private final ExecutorService worker=Executors.newSingleThreadExecutor();
+    private final ExecutorService auxWorker=Executors.newSingleThreadExecutor();
+    private TextView status,details; private ImageView preview; private ProgressBar progress;
+    private Button selectBtn,wavBtn,phoneBtn,archiveBtn,labWavBtn,dnaBtn,savePngBtn,saveOriginalBtn,labBtn,playBtn,shareBtn;
+    private ArchiveContainer currentArchive,recoveredArchive; private byte[] compressedArchive; private short[] spectrogramArt;
+    private boolean maximumRecovery=true; private String pendingWavName="SpectraDNA-MAX.wav"; private Uri lastWavUri; private MediaPlayer player;
+    private final EnumMap<WavProfile,Uri> wavUris=new EnumMap<>(WavProfile.class); private int bioOptions=BioWaveCarrier.ALL;
+    private volatile boolean buildInProgress=false;
+
+    @Override public void onCreate(Bundle b){super.onCreate(b);setContentView(buildUi());}
+
+    private View buildUi(){
+        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(Color.rgb(8,10,15));
+        LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(18),dp(20),dp(18),dp(34));scroll.addView(root,new ScrollView.LayoutParams(-1,-2));
+        TextView title=text("SPECTRA DNA VAULT MAX v3.1 AUTO FAST",25,Color.rgb(144,255,180));title.setTypeface(Typeface.DEFAULT_BOLD);root.addView(title);
+        TextView sub=text("Image → spectrogram body + exact acoustic genome → SHA/Merkle verified pixels → redundant DNA archive",13,Color.LTGRAY);sub.setPadding(0,dp(5),0,dp(14));root.addView(sub);
+        preview=new ImageView(this);preview.setAdjustViewBounds(true);preview.setScaleType(ImageView.ScaleType.FIT_CENTER);GradientDrawable frame=new GradientDrawable();frame.setColor(Color.rgb(17,21,29));frame.setCornerRadius(dp(16));frame.setStroke(dp(1),Color.rgb(72,96,84));preview.setBackground(frame);preview.setPadding(dp(7),dp(7),dp(7),dp(7));root.addView(preview,new LinearLayout.LayoutParams(-1,dp(245)));
+        selectBtn=button("SELECT IMAGE  •  AUTO BUILD EVERYTHING",v->pickImage());root.addView(selectBtn);
+        wavBtn=button("REBUILD EVERYTHING MAX",v->buildEverything());wavBtn.setEnabled(false);root.addView(wavBtn);
+        phoneBtn=button("GENERATE PHONE MASTER 48 kHz",v->generateProfileWav(WavProfile.PHONE_48,true));phoneBtn.setEnabled(false);root.addView(phoneBtn);
+        archiveBtn=button("GENERATE ARCHIVE MASTER 96 kHz",v->generateProfileWav(WavProfile.ARCHIVE_96,false));archiveBtn.setEnabled(false);root.addView(archiveBtn);
+        labWavBtn=button("GENERATE LAB MASTER 192 kHz",v->generateProfileWav(WavProfile.LAB_192,false));labWavBtn.setEnabled(false);root.addView(labWavBtn);
+        playBtn=button("▶  PLAY LAST AUDIO",v->playLastWav());playBtn.setEnabled(false);root.addView(playBtn);
+        shareBtn=button("SHARE LAST AUDIO",v->shareLastWav());shareBtn.setEnabled(false);root.addView(shareBtn);
+        dnaBtn=button("3  EXPORT DNA MAX A/C/G/T",v->createDnaDocument());dnaBtn.setEnabled(false);root.addView(dnaBtn);
+        root.addView(button("VERIFY / RECOVER WAV",v->pickWav()));
+        root.addView(button("IMPORT DNA MAX ARCHIVE",v->pickDna()));
+        labBtn=button("DESTRUCTION LAB",v->runLab());labBtn.setEnabled(false);root.addView(labBtn);
+        savePngBtn=button("SAVE RECOVERED CANONICAL PNG",v->createRecoveredPng());savePngBtn.setEnabled(false);root.addView(savePngBtn);
+        saveOriginalBtn=button("SAVE RECOVERED ORIGINAL FILE",v->createRecoveredOriginal());saveOriginalBtn.setEnabled(false);root.addView(saveOriginalBtn);
+        CheckBox max=new CheckBox(this);max.setText("Maximum Recovery: 3 acoustic passes + 6+4 erasure code + duplicate DNA branches");max.setTextColor(Color.WHITE);max.setChecked(true);max.setOnCheckedChangeListener((b,c)->maximumRecovery=c);root.addView(max);
+        root.addView(layerCheck("Gariaev-inspired reported carrier bank",BioWaveCarrier.GARIAEV));
+        root.addView(layerCheck("DNA THz-mode ratio sonification",BioWaveCarrier.PHONON));
+        root.addView(layerCheck("DNA alphabet soliton pulse signature",BioWaveCarrier.SOLITON));
+        root.addView(layerCheck("Phase-conjugate / scalar-inspired stereo",BioWaveCarrier.PHASE_CONJUGATE));
+        root.addView(layerCheck("~45 kHz extended-band layer (96/192 kHz masters)",BioWaveCarrier.ULTRASOUND_45K));
+        progress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);progress.setMax(100);progress.setProgress(0);LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(-1,dp(10));pp.topMargin=dp(16);root.addView(progress,pp);
+        status=text("Pick an image. Everything else is automatic.",18,Color.WHITE);status.setTypeface(Typeface.DEFAULT_BOLD);status.setPadding(0,dp(10),0,dp(6));root.addView(status);
+        details=text(baseDetails(),13,Color.rgb(187,196,205));root.addView(details);
+        TextView foot=text("Verification is byte/pixel based, not visual guesswork. The digital DNA layer is an information-storage codec: DENSE differential encoding + edit-tolerant SYNC codewords + GF(256) parity. Experimental carrier labels describe encoding choices, not established biological effects. The exact digital recovery path remains independent. It does not claim to be the official Gungnir, DNA-Aeon, or HEDGES implementation.",11,Color.GRAY);foot.setPadding(0,dp(18),0,0);root.addView(foot);
+        return scroll;
+    }

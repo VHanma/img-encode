@@ -1,0 +1,55 @@
+    private String baseDetails(){return "AUTO FAST: shared 48 kHz protected grid computed once, then reused for all masters\nEXACT GRID: 48 kHz protected samples preserved in every master\nLEFT: 3-pass fractal spectrogram + rescue BFSK + "+SecondaryOfdmCodec.describe()+"\nRIGHT: "+OfdmCodec.describe()+"\nBIO LAYER: "+BioWaveCarrier.describe()+"\nOUTPUTS: 48 kHz phone + 96 kHz archive + 192 kHz lab\nPRIMARY OUTER: 6+4 GF(256), 3 time-diversity passes\nSECONDARY OUTER: independent 4+4 GF(256) transport\nDNA: DENSE + SYNC/edit-repair ensemble";}
+    private Button button(String label,View.OnClickListener l){Button b=new Button(this);b.setText(label);b.setTextColor(Color.rgb(7,15,10));b.setTextSize(13);b.setAllCaps(false);b.setTypeface(Typeface.DEFAULT_BOLD);b.setOnClickListener(l);GradientDrawable g=new GradientDrawable();g.setColor(Color.rgb(140,255,176));g.setCornerRadius(dp(13));b.setBackground(g);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,dp(55));p.topMargin=dp(9);b.setLayoutParams(p);return b;}
+    private CheckBox layerCheck(String label,int bit){CheckBox c=new CheckBox(this);c.setText(label);c.setTextColor(Color.LTGRAY);c.setChecked(true);c.setOnCheckedChangeListener((b,on)->{if(on)bioOptions|=bit;else bioOptions&=~bit;});return c;}
+    private TextView text(String s,int size,int color){TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(color);return t;}
+    private int dp(int v){return(int)(v*getResources().getDisplayMetrics().density+0.5f);}
+
+    private void pickImage(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("image/*");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,PICK_IMAGE);}
+    private void pickWav(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("audio/wav");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,PICK_WAV);}
+    private void pickDna(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("text/*");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,PICK_DNA);}
+    private void createWavDocument(){generateProfileWav(WavProfile.PHONE_48,true);}
+    private void generateMasterWav(){generateProfileWav(WavProfile.PHONE_48,true);}
+
+    private static final class BuildPlan implements Closeable {
+        final byte[] primary,secondary,rescue; final WavVault.PreparedGrid grid; final double minutes;
+        BuildPlan(byte[] p,byte[] s,byte[] r,WavVault.PreparedGrid g,double m){primary=p;secondary=s;rescue=r;grid=g;minutes=m;}
+        @Override public void close(){if(grid!=null)grid.close();}
+    }
+
+    private BuildPlan prepareBuildPlan()throws Exception{
+        byte[] transport=OuterTransport.build(compressedArchive,maximumRecovery),secondary=SecondaryTransport.build(compressedArchive),rescue=RescueFsk.header(compressedArchive,currentArchive.width,currentArchive.height);
+        File cache=new File(getCacheDir(),"spectradna-grid-"+System.nanoTime()+".pcm");
+        WavVault.PreparedGrid grid=WavVault.prepareGrid(cache,spectrogramArt,transport,secondary,rescue,(p,phase)->setWeightedProgress(2,20,p,phase));
+        return new BuildPlan(transport,secondary,rescue,grid,grid.baseFrames/(double)OfdmCodec.SAMPLE_RATE/60.0);
+    }
+
+    private void generateProfileWav(WavProfile profile,boolean autoPlay){
+        if(compressedArchive==null||spectrogramArt==null){status.setText("SELECT AN IMAGE FIRST");return;}
+        if(buildInProgress){status.setText("AUTO BUILD IS ALREADY RUNNING");return;}
+        setBuildState(true,"Preparing shared recovery grid…");
+        worker.execute(()->{Uri outUri=null;try(BuildPlan plan=prepareBuildPlan()){
+            outUri=createAudioUri(profile);
+            writeMasterWav(outUri,profile,plan,20,98);
+            finishPending(outUri);wavUris.put(profile,outUri);lastWavUri=outUri;final Uri ready=outUri;
+            runOnUiThread(()->{status.setText(profile.suffix+" AUDIO READY ✓");progress.setProgress(100);playBtn.setEnabled(true);shareBtn.setEnabled(true);details.append("\n\nWAV SAVED: Music/SpectraDNA/"+nameFor(profile));if(autoPlay)playUri(ready);setBuildStateUi(false);});
+        }catch(Exception e){if(outUri!=null)try{getContentResolver().delete(outUri,null,null);}catch(Exception ignored){}setBuildStateUi(false);fail(e);}});
+    }
+
+    private void buildEverything(){
+        if(compressedArchive==null||spectrogramArt==null){status.setText("SELECT AN IMAGE FIRST");return;}
+        if(buildInProgress){status.setText("AUTO BUILD IS ALREADY RUNNING");return;}
+        setBuildState(true,"AUTO MAX: preparing one shared protected grid…");
+        worker.execute(()->{ArrayList<Uri> made=new ArrayList<>();Future<?> aux=null;try(BuildPlan plan=prepareBuildPlan()){
+            final String stats=String.format("Primary %s • secondary %s • %.1f min protected timeline",fmt(plan.primary.length),fmt(plan.secondary.length),plan.minutes);
+            runOnUiThread(()->details.append("\n\nAUTO FAST BUILD\n"+stats+"\nProtected grid computed once and reused ×3."));
+
+            // DNA + manifest are independent of WAV rendering, so do them while audio is being written.
+            aux=auxWorker.submit(()->{try{
+                Uri dna=createTextUri("SpectraDNA-MAX-archive.fasta.txt","text/plain");synchronized(made){made.add(dna);}try(OutputStream out=getContentResolver().openOutputStream(dna,"w")){DnaAdvancedCodec.encodeFasta(compressedArchive,out,maximumRecovery);}finishPending(dna);
+                String manifest=buildManifest();Uri man=createTextUri(safeBase(currentArchive.fileName)+"-SpectraDNA-MANIFEST.txt","text/plain");synchronized(made){made.add(man);}try(OutputStream out=getContentResolver().openOutputStream(man,"w")){out.write(manifest.getBytes("UTF-8"));}finishPending(man);
+            }catch(Exception e){throw new CompletionException(e);}});
+
+            Uri phone=createAudioUri(WavProfile.PHONE_48);made.add(phone);writeMasterWav(phone,WavProfile.PHONE_48,plan,20,47);finishPending(phone);wavUris.put(WavProfile.PHONE_48,phone);lastWavUri=phone;
+            runOnUiThread(()->{playBtn.setEnabled(true);shareBtn.setEnabled(true);status.setText("PHONE AUDIO READY ▶  •  finishing 96/192 kHz + DNA automatically");playUri(phone);});
+
+            Uri archive=createAudioUri(WavProfile.ARCHIVE_96);made.add(archive);writeMasterWav(archive,WavProfile.ARCHIVE_96,plan,47,68);finishPending(archive);wavUris.put(WavProfile.ARCHIVE_96,archive);

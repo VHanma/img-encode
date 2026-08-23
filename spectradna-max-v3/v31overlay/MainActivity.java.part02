@@ -1,0 +1,34 @@
+            Uri lab=createAudioUri(WavProfile.LAB_192);made.add(lab);writeMasterWav(lab,WavProfile.LAB_192,plan,68,94);finishPending(lab);wavUris.put(WavProfile.LAB_192,lab);
+            if(aux!=null)aux.get();
+            runOnUiThread(()->{progress.setProgress(100);status.setText("EVERYTHING COMPLETE ✓  AUDIO + 96k + 192k + DNA + MANIFEST");details.append("\n\nAUTO BUILD COMPLETE\nMusic/SpectraDNA: PHONE 48k, ARCHIVE 96k, LAB 192k\nDownloads/SpectraDNA: DNA MAX + manifest\nNo extra taps required.");setBuildStateUi(false);});
+        }catch(Exception e){if(aux!=null)aux.cancel(true);setBuildStateUi(false);fail(e instanceof ExecutionException&&e.getCause() instanceof Exception?(Exception)e.getCause():e);}});
+    }
+
+    private Uri createAudioUri(WavProfile profile)throws IOException{
+        ContentValues values=new ContentValues();values.put(MediaStore.Audio.Media.DISPLAY_NAME,nameFor(profile));values.put(MediaStore.Audio.Media.MIME_TYPE,"audio/wav");
+        if(Build.VERSION.SDK_INT>=29){values.put(MediaStore.Audio.Media.RELATIVE_PATH,Environment.DIRECTORY_MUSIC+"/SpectraDNA");values.put(MediaStore.Audio.Media.IS_PENDING,1);}
+        Uri u=getContentResolver().insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,values);if(u==null)throw new IOException("Android could not create "+profile.suffix+" WAV");return u;
+    }
+    private Uri createTextUri(String name,String mime)throws IOException{
+        ContentValues values=new ContentValues();values.put(MediaStore.MediaColumns.DISPLAY_NAME,name);values.put(MediaStore.MediaColumns.MIME_TYPE,mime);
+        if(Build.VERSION.SDK_INT>=29){values.put(MediaStore.MediaColumns.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS+"/SpectraDNA");values.put(MediaStore.MediaColumns.IS_PENDING,1);}
+        Uri u=getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,values);if(u==null)throw new IOException("Android could not create "+name);return u;
+    }
+    private void finishPending(Uri u){if(Build.VERSION.SDK_INT>=29){ContentValues done=new ContentValues();done.put(MediaStore.MediaColumns.IS_PENDING,0);getContentResolver().update(u,done,null,null);}}
+    private String nameFor(WavProfile p){return safeBase(currentArchive==null?"image":currentArchive.fileName)+"-SpectraDNA-"+p.suffix+".wav";}
+    private String buildManifest(){return "SpectraDNA MAX v3.1 AUTO FAST\nOriginal SHA-256: "+ByteUtil.hex(currentArchive.originalSha)+"\nCanonical SHA-256: "+ByteUtil.hex(currentArchive.canonicalSha)+"\nRaw RGBA SHA-256: "+ByteUtil.hex(currentArchive.pixelSha)+"\nMerkle root: "+ByteUtil.hex(currentArchive.merkleRoot)+"\nCompressed archive SHA-256: "+ByteUtil.hex(ByteUtil.sha256(compressedArchive))+"\nBio options bitmask: "+bioOptions+"\n"+baseDetails()+"\n";}
+    private void writeMasterWav(Uri outUri,WavProfile profile,BuildPlan plan,int start,int end)throws Exception{
+        runOnUiThread(()->details.append(String.format("\n%s: %.1f min • protected-grid factor ×%d",profile.suffix,plan.minutes,profile.factor)));
+        try(OutputStream out=getContentResolver().openOutputStream(outUri,"w")){if(out==null)throw new IOException("Could not open WAV output");WavVault.writeProfileFromGrid(out,plan.grid,compressedArchive,profile,bioOptions,(p,phase)->setWeightedProgress(start,end,p,phase));}
+    }
+    private void writeMasterWav(Uri outUri,WavProfile profile)throws Exception{try(BuildPlan plan=prepareBuildPlan()){writeMasterWav(outUri,profile,plan,20,98);}}
+
+    private void setWeightedProgress(int start,int end,int inner,String phase){int value=start+(int)Math.round((end-start)*(Math.max(0,Math.min(100,inner))/100.0));runOnUiThread(()->{progress.setProgress(value);status.setText(phase+"  "+value+"%");});}
+    private void setBuildState(boolean busy,String text){buildInProgress=busy;runOnUiThread(()->{progress.setProgress(busy?1:0);status.setText(text);if(selectBtn!=null)selectBtn.setEnabled(!busy);if(wavBtn!=null)wavBtn.setEnabled(!busy&&compressedArchive!=null);});}
+    private void setBuildStateUi(boolean busy){buildInProgress=busy;runOnUiThread(()->{if(selectBtn!=null)selectBtn.setEnabled(!busy);if(wavBtn!=null)wavBtn.setEnabled(!busy&&compressedArchive!=null);if(phoneBtn!=null)phoneBtn.setEnabled(!busy&&compressedArchive!=null);if(archiveBtn!=null)archiveBtn.setEnabled(!busy&&compressedArchive!=null);if(labWavBtn!=null)labWavBtn.setEnabled(!busy&&compressedArchive!=null);if(dnaBtn!=null)dnaBtn.setEnabled(!busy&&compressedArchive!=null);});}
+
+    private void playLastWav(){if(lastWavUri==null){status.setText("GENERATE AUDIO FIRST");return;}playUri(lastWavUri);}
+    private void playUri(Uri uri){try{if(player!=null){try{player.stop();}catch(Exception ignored){}player.release();}player=new MediaPlayer();player.setDataSource(this,uri);player.setOnPreparedListener(mp->{mp.start();if(!buildInProgress)status.setText("PLAYING MASTER AUDIO ▶");});player.setOnCompletionListener(mp->{if(!buildInProgress)status.setText("AUDIO PLAYBACK COMPLETE ✓");});player.prepareAsync();}catch(Exception e){fail(e);}}
+    private void shareLastWav(){if(lastWavUri==null){status.setText("GENERATE AUDIO FIRST");return;}Intent i=new Intent(Intent.ACTION_SEND);i.setType("audio/wav");i.putExtra(Intent.EXTRA_STREAM,lastWavUri);i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivity(Intent.createChooser(i,"Share SpectraDNA WAV"));}
+    private void createDnaDocument(){if(compressedArchive==null)return;long bases=DnaAdvancedCodec.estimatedBases(compressedArchive.length,maximumRecovery);new AlertDialog.Builder(this).setTitle("DNA MAX export").setMessage("Estimated sequence: "+fmtCount(bases)+" bases\n\nMAX deliberately trades compactness for independent recovery paths.").setNegativeButton("Cancel",null).setPositiveButton("Export",(d,w)->{Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);i.setType("text/plain");i.putExtra(Intent.EXTRA_TITLE,"SpectraDNA-MAX-archive.fasta.txt");startActivityForResult(i,SAVE_DNA);}).show();}
+    private void createRecoveredPng(){if(recoveredArchive==null)return;Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);i.setType("image/png");i.putExtra(Intent.EXTRA_TITLE,"RECOVERED-CANONICAL-"+safeBase(recoveredArchive.fileName)+".png");startActivityForResult(i,SAVE_PNG);}

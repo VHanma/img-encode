@@ -1,0 +1,14 @@
+name: Legacy SpectraDNA MAX v3 BioWave
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  legacy-note:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Legacy workflow notice
+        run: echo "Legacy v3 build retained for manual historical use. Active APK builds are handled by build_apk.yml (v3.2 COMPACT EXACT)."

@@ -1,0 +1,90 @@
+--- a/README.md
++++ b/README.md
+@@ -1,4 +1,4 @@
+-# SpectraDNA Vault MAX v3 — BioWave MAX
++# SpectraDNA Vault MAX v3.1 — AUTO FAST BioWave MAX
+ 
+ Image → visible spectrogram → exact acoustic archive → redundant DNA text archive.
+ 
+@@ -6,9 +6,11 @@
+ 
+ The audio file is the primary artifact. The app never treats a visually similar image as recovery success. Exact recovery is verified from stored bytes, canonical pixels, SHA-256 hashes, tile hashes and a Merkle root.
+ 
+-## One-tap MAX build
++## Zero-tap-after-selection AUTO FAST build
+ 
+-**BUILD EVERYTHING MAX** writes:
++Pick an image once. The app immediately starts **AUTO BUILD EVERYTHING** with no second button press. It computes the expensive protected 48 kHz OFDM/spectrogram grid once, reuses it for all three masters, makes the 48 kHz phone master first and auto-plays it while the remaining outputs continue in the background. Quality, sample rates, ECC and BioWave layers are unchanged.
++
++The automatic build writes:
+ 
+ - `*-SpectraDNA-PHONE-48k.wav` to `Music/SpectraDNA`
+ - `*-SpectraDNA-ARCHIVE-96k.wav` to `Music/SpectraDNA`
+@@ -16,7 +18,7 @@
+ - `SpectraDNA-MAX-archive.fasta.txt` to `Downloads/SpectraDNA`
+ - a SHA/Merkle manifest to `Downloads/SpectraDNA`
+ 
+-The phone master auto-plays after the build.
++The phone master auto-plays as soon as it is ready; 96 kHz, 192 kHz, DNA and the manifest keep finishing automatically.
+ 
+ ## Exact acoustic layer
+ 
+--- a/app/build.gradle
++++ b/app/build.gradle
+@@ -10,8 +10,8 @@
+         applicationId 'com.vaan.spectradna'
+         minSdk 26
+         targetSdk 35
+-        versionCode 4
+-        versionName '3.0.0-biowave-max'
++        versionCode 5
++        versionName '3.1.0-auto-fast'
+     }
+ 
+     buildTypes {
+--- a/app/src/main/java/com/vaan/spectradna/MainActivity.java
++++ b/app/src/main/java/com/vaan/spectradna/MainActivity.java
+@@ -20,22 +20,24 @@
+ public class MainActivity extends Activity {
+     private static final int PICK_IMAGE=10,SAVE_WAV=11,PICK_WAV=12,SAVE_DNA=13,PICK_DNA=14,SAVE_PNG=15,SAVE_ORIGINAL=16;
+     private final ExecutorService worker=Executors.newSingleThreadExecutor();
+-    private TextView status,details; private ImageView preview;
+-    private Button wavBtn,phoneBtn,archiveBtn,labWavBtn,dnaBtn,savePngBtn,saveOriginalBtn,labBtn,playBtn,shareBtn;
++    private final ExecutorService auxWorker=Executors.newSingleThreadExecutor();
++    private TextView status,details; private ImageView preview; private ProgressBar progress;
++    private Button selectBtn,wavBtn,phoneBtn,archiveBtn,labWavBtn,dnaBtn,savePngBtn,saveOriginalBtn,labBtn,playBtn,shareBtn;
+     private ArchiveContainer currentArchive,recoveredArchive; private byte[] compressedArchive; private short[] spectrogramArt;
+     private boolean maximumRecovery=true; private String pendingWavName="SpectraDNA-MAX.wav"; private Uri lastWavUri; private MediaPlayer player;
+     private final EnumMap<WavProfile,Uri> wavUris=new EnumMap<>(WavProfile.class); private int bioOptions=BioWaveCarrier.ALL;
++    private volatile boolean buildInProgress=false;
+ 
+     @Override public void onCreate(Bundle b){super.onCreate(b);setContentView(buildUi());}
+ 
+     private View buildUi(){
+         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(Color.rgb(8,10,15));
+         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(18),dp(20),dp(18),dp(34));scroll.addView(root,new ScrollView.LayoutParams(-1,-2));
+-        TextView title=text("SPECTRA DNA VAULT MAX v3",25,Color.rgb(144,255,180));title.setTypeface(Typeface.DEFAULT_BOLD);root.addView(title);
++        TextView title=text("SPECTRA DNA VAULT MAX v3.1 AUTO FAST",25,Color.rgb(144,255,180));title.setTypeface(Typeface.DEFAULT_BOLD);root.addView(title);
+         TextView sub=text("Image → spectrogram body + exact acoustic genome → SHA/Merkle verified pixels → redundant DNA archive",13,Color.LTGRAY);sub.setPadding(0,dp(5),0,dp(14));root.addView(sub);
+         preview=new ImageView(this);preview.setAdjustViewBounds(true);preview.setScaleType(ImageView.ScaleType.FIT_CENTER);GradientDrawable frame=new GradientDrawable();frame.setColor(Color.rgb(17,21,29));frame.setCornerRadius(dp(16));frame.setStroke(dp(1),Color.rgb(72,96,84));preview.setBackground(frame);preview.setPadding(dp(7),dp(7),dp(7),dp(7));root.addView(preview,new LinearLayout.LayoutParams(-1,dp(245)));
+-        root.addView(button("1  SELECT IMAGE",v->pickImage()));
+-        wavBtn=button("2  BUILD EVERYTHING MAX",v->buildEverything());wavBtn.setEnabled(false);root.addView(wavBtn);
++        selectBtn=button("SELECT IMAGE  •  AUTO BUILD EVERYTHING",v->pickImage());root.addView(selectBtn);
++        wavBtn=button("REBUILD EVERYTHING MAX",v->buildEverything());wavBtn.setEnabled(false);root.addView(wavBtn);
+         phoneBtn=button("GENERATE PHONE MASTER 48 kHz",v->generateProfileWav(WavProfile.PHONE_48,true));phoneBtn.setEnabled(false);root.addView(phoneBtn);
+         archiveBtn=button("GENERATE ARCHIVE MASTER 96 kHz",v->generateProfileWav(WavProfile.ARCHIVE_96,false));archiveBtn.setEnabled(false);root.addView(archiveBtn);
+         labWavBtn=button("GENERATE LAB MASTER 192 kHz",v->generateProfileWav(WavProfile.LAB_192,false));labWavBtn.setEnabled(false);root.addView(labWavBtn);
+@@ -53,12 +55,13 @@
+         root.addView(layerCheck("DNA alphabet soliton pulse signature",BioWaveCarrier.SOLITON));
+         root.addView(layerCheck("Phase-conjugate / scalar-inspired stereo",BioWaveCarrier.PHASE_CONJUGATE));
+         root.addView(layerCheck("~45 kHz extended-band layer (96/192 kHz masters)",BioWaveCarrier.ULTRASOUND_45K));
+-        status=text("Ready.",18,Color.WHITE);status.setTypeface(Typeface.DEFAULT_BOLD);status.setPadding(0,dp(18),0,dp(6));root.addView(status);
++        progress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);progress.setMax(100);progress.setProgress(0);LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(-1,dp(10));pp.topMargin=dp(16);root.addView(progress,pp);
++        status=text("Pick an image. Everything else is automatic.",18,Color.WHITE);status.setTypeface(Typeface.DEFAULT_BOLD);status.setPadding(0,dp(10),0,dp(6));root.addView(status);
+         details=text(baseDetails(),13,Color.rgb(187,196,205));root.addView(details);
+         TextView foot=text("Verification is byte/pixel based, not visual guesswork. The digital DNA layer is an information-storage codec: DENSE differential encoding + edit-tolerant SYNC codewords + GF(256) parity. Experimental carrier labels describe encoding choices, not established biological effects. The exact digital recovery path remains independent. It does not claim to be the official Gungnir, DNA-Aeon, or HEDGES implementation.",11,Color.GRAY);foot.setPadding(0,dp(18),0,0);root.addView(foot);
+         return scroll;
+     }
+-    private String baseDetails(){return "EXACT GRID: 48 kHz protected samples preserved in every master\nLEFT: 3-pass fractal spectrogram + rescue BFSK + "+SecondaryOfdmCodec.describe()+"\nRIGHT: "+OfdmCodec.describe()+"\nBIO LAYER: "+BioWaveCarrier.describe()+"\nOUTPUTS: 48 kHz phone + 96 kHz archive + 192 kHz lab\nPRIMARY OUTER: 6+4 GF(256), 3 time-diversity passes\nSECONDARY OUTER: independent 4+4 GF(256) transport\nDNA: DENSE + SYNC/edit-repair ensemble";}
++    private String baseDetails(){return "AUTO FAST: shared 48 kHz protected grid computed once, then reused for all masters\nEXACT GRID: 48 kHz protected samples preserved in every master\nLEFT: 3-pass fractal spectrogram + rescue BFSK + "+SecondaryOfdmCodec.describe()+"\nRIGHT: "+OfdmCodec.describe()+"\nBIO LAYER: "+BioWaveCarrier.describe()+"\nOUTPUTS: 48 kHz phone + 96 kHz archive + 192 kHz lab\nPRIMARY OUTER: 6+4 GF(256), 3 time-diversity passes\nSECONDARY OUTER: independent 4+4 GF(256) transport\nDNA: DENSE + SYNC/edit-repair ensemble";}
+     private Button button(String label,View.OnClickListener l){Button b=new Button(this);b.setText(label);b.setTextColor(Color.rgb(7,15,10));b.setTextSize(13);b.setAllCaps(false);b.setTypeface(Typeface.DEFAULT_BOLD);b.setOnClickListener(l);GradientDrawable g=ne
