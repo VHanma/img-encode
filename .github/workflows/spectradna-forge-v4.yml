@@ -1,0 +1,116 @@
+name: Build SpectraDNA Forge v4 APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - spectradna-forge-v4
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: github.actor != 'github-actions[bot]'
+    name: Build SpectraDNA Forge v4
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout v4 branch
+        uses: actions/checkout@v4
+        with:
+          ref: spectradna-forge-v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Install Android SDK packages
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Reassemble verified SpectraDNA base
+        run: |
+          rm -rf buildsrc
+          mkdir -p buildsrc
+          cat spectradna-max-v3/chunks/part*.b64 > /tmp/spectradna-v3.b64
+          base64 -d /tmp/spectradna-v3.b64 > /tmp/SpectraDNA-Vault-MAX-v3-BioWave-source.zip
+          echo "3375097e5ac37735aed6de3f1fc4dc11892dda52ba7acf340bfdc855dfdb6562  /tmp/SpectraDNA-Vault-MAX-v3-BioWave-source.zip" | sha256sum -c -
+          unzip -q /tmp/SpectraDNA-Vault-MAX-v3-BioWave-source.zip -d buildsrc
+
+      - name: Apply v3.1 and v3.2 proven codec layers
+        run: |
+          ROOT=buildsrc/SpectraDNA-Vault-MAX-v3
+          cat spectradna-max-v3/v31overlay/MainActivity.java.part* > "$ROOT/app/src/main/java/com/vaan/spectradna/MainActivity.java"
+          cat spectradna-max-v3/v31overlay/WavVault.java.part* > "$ROOT/app/src/main/java/com/vaan/spectradna/WavVault.java"
+          cp spectradna-max-v3/v32overlay/CompactArchive.java "$ROOT/app/src/main/java/com/vaan/spectradna/CompactArchive.java"
+          cp spectradna-max-v3/v32overlay/CompactV32SelfTest.java "$ROOT/tools/CompactV32SelfTest.java"
+          python3 spectradna-max-v3/v32overlay/apply_v32.py "$ROOT"
+          python3 spectradna-max-v3/v32overlay/tighten_compact.py "$ROOT"
+
+      - name: Apply SpectraDNA Forge v4
+        run: |
+          ROOT=buildsrc/SpectraDNA-Vault-MAX-v3
+          cp spectradna-max-v3/v4overlay/TriStrandCodec.java "$ROOT/app/src/main/java/com/vaan/spectradna/TriStrandCodec.java"
+          cp spectradna-max-v3/v4overlay/TriStrandSignal.java "$ROOT/app/src/main/java/com/vaan/spectradna/TriStrandSignal.java"
+          cp spectradna-max-v3/v4overlay/AudioSpectrogram.java "$ROOT/app/src/main/java/com/vaan/spectradna/AudioSpectrogram.java"
+          cp spectradna-max-v3/v4overlay/ForgeV4SelfTest.java "$ROOT/tools/ForgeV4SelfTest.java"
+          python3 spectradna-max-v3/v4overlay/apply_v4.py "$ROOT"
+          cp spectradna-max-v3/v4overlay/build.gradle "$ROOT/app/build.gradle"
+          grep -q "4.0.0-forge" "$ROOT/app/build.gradle"
+          grep -q "SPECTRADNA FORGE v4" "$ROOT/app/src/main/java/com/vaan/spectradna/MainActivity.java"
+          grep -q "VIEW BUILT-IN SPECTROGRAM" "$ROOT/app/src/main/java/com/vaan/spectradna/MainActivity.java"
+          grep -q "TriStrandSignal" "$ROOT/app/src/main/java/com/vaan/spectradna/WavVault.java"
+
+      - name: Run codec and v4 tri-strand self-tests
+        working-directory: buildsrc/SpectraDNA-Vault-MAX-v3
+        run: |
+          rm -rf core-test-classes
+          mkdir core-test-classes
+          find app/src/main/java/com/vaan/spectradna -name '*.java' ! -name 'MainActivity.java' ! -name 'AudioSpectrogram.java' > core-files.txt
+          javac -d core-test-classes @core-files.txt tools/CodecSelfTest.java tools/WavSelfTest.java tools/BioWaveSelfTest.java tools/CompactV32SelfTest.java tools/ForgeV4SelfTest.java
+          java -cp core-test-classes CodecSelfTest
+          java -cp core-test-classes WavSelfTest
+          java -cp core-test-classes BioWaveSelfTest
+          java -cp core-test-classes com.vaan.spectradna.CompactV32SelfTest
+          java -cp core-test-classes com.vaan.spectradna.ForgeV4SelfTest
+
+      - name: Build installable v4 APK
+        working-directory: buildsrc/SpectraDNA-Vault-MAX-v3
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Package APK and checksum
+        run: |
+          cp buildsrc/SpectraDNA-Vault-MAX-v3/app/build/outputs/apk/debug/app-debug.apk spectradna-max-v3/SpectraDNA-Forge-v4.apk
+          sha256sum spectradna-max-v3/SpectraDNA-Forge-v4.apk > spectradna-max-v3/SpectraDNA-Forge-v4-SHA256.txt
+          ls -lh spectradna-max-v3/SpectraDNA-Forge-v4.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpectraDNA-Forge-v4-APK
+          path: |
+            spectradna-max-v3/SpectraDNA-Forge-v4.apk
+            spectradna-max-v3/SpectraDNA-Forge-v4-SHA256.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish built APK to v4 branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- spectradna-max-v3/SpectraDNA-Forge-v4.apk spectradna-max-v3/SpectraDNA-Forge-v4-SHA256.txt
+          git commit -m "Build SpectraDNA Forge v4 APK [skip ci]" || true
+          git push origin HEAD:spectradna-forge-v4
