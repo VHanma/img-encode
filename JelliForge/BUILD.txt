@@ -1,0 +1,8 @@
+JelliForge v1.1 paintable multi-photo deformation editor
+Save Project + Open Saved
+Paint / Erase / Override / Preview
+Brush size / intensity / feather controls
+Green -> yellow -> orange -> red strength heatmap
+Smooth falloff drives the actual deformation mesh
+Undo / redo
+PNG + grid GIF + batch GIF export
