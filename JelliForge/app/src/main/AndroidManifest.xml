@@ -6,7 +6,7 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
         <activity
-            android:name=".MainActivityV14"
+            android:name=".MainActivityV15"
             android:screenOrientation="unspecified"
             android:exported="true">
             <intent-filter>
