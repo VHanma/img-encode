@@ -4,11 +4,11 @@
     <application
         android:allowBackup="true"
         android:hardwareAccelerated="true"
-        android:label="OsciVision Ultra v2"
+        android:label="OsciVision Ultra v3"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
         <activity
-            android:name=".UltraActivity"
+            android:name=".UltraV3Activity"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="true"
             android:screenOrientation="unspecified">
