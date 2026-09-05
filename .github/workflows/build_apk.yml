@@ -45,12 +45,12 @@ jobs:
           mkdir -p artifact-apk
           find . -type f -iname "*.apk" | sort | tee apk-files.txt
           RAW_APK="$(head -n 1 apk-files.txt)"
-          cp "$RAW_APK" artifact-apk/OsciVision-Ultra-v5-debug.apk
+          cp "$RAW_APK" artifact-apk/OsciVision-Ultra-v6-debug.apk
           ls -lh artifact-apk/
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: OsciVision-Ultra-v5-debug-apk
+          name: OsciVision-Ultra-v6-debug-apk
           path: artifact-apk/*.apk
           if-no-files-found: error
