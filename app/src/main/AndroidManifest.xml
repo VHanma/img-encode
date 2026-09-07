@@ -4,11 +4,11 @@
     <application
         android:allowBackup="true"
         android:hardwareAccelerated="true"
-        android:label="FRAMEFORGE Ω v8"
+        android:label="OsciVision Reference Trace v9"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
         <activity
-            android:name=".UltraV8Activity"
+            android:name=".UltraV9Activity"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="true"
             android:screenOrientation="unspecified">
