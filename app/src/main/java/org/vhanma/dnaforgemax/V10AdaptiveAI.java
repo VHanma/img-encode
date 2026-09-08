@@ -8,7 +8,7 @@ package org.vhanma.dnaforgemax;
 final class V10AdaptiveAI {
     static final class Decision {
         final float score,novelty; final int tier; final boolean learned;
-        Decision(float score,float novelty,int tier,boolean learned){this.score=score;this.novelty=novel;this.tier=tier;this.learned=learned;}
+        Decision(float score,float novelty,int tier,boolean learned){this.score=score;this.novelty=novelty;this.tier=tier;this.learned=learned;}
     }
     private final float[]mean=new float[7],var=new float[7];
     private int count=0,quarantine=0;
