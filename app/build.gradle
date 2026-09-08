@@ -7,10 +7,25 @@ android {
     compileSdk 35
 
     defaultConfig {
-        applicationId "org.vhanma.dnaforgemax"
+        applicationId "com.vhanma.oscivisionultra"
         minSdk 24
         targetSdk 35
-        versionCode 14
-        versionName "13.0-max"
+        versionCode 10
+        versionName "10.0"
     }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation "androidx.activity:activity:1.10.1"
+    def camerax_version = "1.4.2"
+    implementation "androidx.camera:camera-core:$camerax_version"
+    implementation "androidx.camera:camera-camera2:$camerax_version"
+    implementation "androidx.camera:camera-lifecycle:$camerax_version"
+    implementation "androidx.camera:camera-view:$camerax_version"
+    implementation "androidx.camera:camera-video:$camerax_version"
 }
