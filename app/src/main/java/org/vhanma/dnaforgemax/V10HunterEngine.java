@@ -4,8 +4,6 @@ import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.RectF;
 
-import java.util.Arrays;
-
 /**
  * Hunter Ω v10 analysis core.
  * Fast, deterministic, low-resolution analysis for anomaly triggering and filter selection.
@@ -21,7 +19,8 @@ final class V10HunterEngine {
         RectF lastRegion;
         int persistence;
         long frameIndex;
-        void reset(){prevLum=null;prevGrad=null;prevAvgLum=0;lastRegion=null;persistence=0;frameIndex=0;}
+        final V10AdaptiveAI ai=new V10AdaptiveAI();
+        void reset(){prevLum=null;prevGrad=null;prevAvgLum=0;lastRegion=null;persistence=0;frameIndex=0;ai.reset();}
     }
 
     static final class Result {
@@ -58,10 +57,10 @@ final class V10HunterEngine {
             lum[i]=l;avg+=l;Color.colorToHSV(c,hsv);sat[i]=hsv[1];hue[i]=hsv[0]/360f;avgSat+=sat[i];
         }
         avg/=px.length;avgSat/=px.length;
-        float edgeSum=0,edgeHigh=0,microSum=0,alternate=0;
+        float edgeSum=0,microSum=0,alternate=0;
         for(int y=1;y<H-1;y++)for(int x=1;x<W-1;x++){
             int i=y*W+x;float gx=(lum[i+1]-lum[i-1])*.5f,gy=(lum[i+W]-lum[i-W])*.5f;
-            float g=(float)Math.sqrt(gx*gx+gy*gy);grad[i]=g;edgeSum+=g;if(g>.16f)edgeHigh++;
+            float g=(float)Math.sqrt(gx*gx+gy*gy);grad[i]=g;edgeSum+=g;
             float lap=Math.abs(lum[i-1]+lum[i+1]+lum[i-W]+lum[i+W]-4*lum[i]);microSum+=lap;
             float a=(lum[i]-lum[i-1])*(lum[i+1]-lum[i]);float d=(lum[i]-lum[i-W])*(lum[i+W]-lum[i]);
             if(a<-.0018f||d<-.0018f)alternate++;
@@ -69,17 +68,17 @@ final class V10HunterEngine {
         int inner=(W-2)*(H-2);float edge=clamp01(edgeSum/(inner*.11f));float micro=clamp01(microSum/(inner*.19f));
         float pattern=clamp01(alternate/(inner*.18f));
 
-        float motionSum=0,gradChange=0,maxDiff=0;
+        float motionSum=0,gradChange=0;
         if(state.prevLum!=null&&state.prevLum.length==lum.length){
-            for(int i=0;i<lum.length;i++){float d=Math.abs(lum[i]-state.prevLum[i]);motionSum+=d;if(d>maxDiff)maxDiff=d;if(state.prevGrad!=null)gradChange+=Math.abs(grad[i]-state.prevGrad[i]);}
+            for(int i=0;i<lum.length;i++){motionSum+=Math.abs(lum[i]-state.prevLum[i]);if(state.prevGrad!=null)gradChange+=Math.abs(grad[i]-state.prevGrad[i]);}
         }
         float motion=state.prevLum==null?0:clamp01(motionSum/(lum.length*.12f));
         float bendVisual=state.prevLum==null?0:clamp01(gradChange/(lum.length*.055f));
         float lumaSpike=state.prevLum==null?0:clamp01(Math.abs(avg-state.prevAvgLum)*6f);
 
-        float colorVar=0,colorEdge=0;
-        for(int y=1;y<H-1;y+=2)for(int x=1;x<W-1;x+=2){int i=y*W+x;colorVar+=Math.abs(sat[i]-avgSat);colorEdge+=hueDistance(hue[i],hue[i+1])*sat[i];}
-        int colorN=((H-2)+1)/2*((W-2)+1)/2;float colorScore=clamp01(colorVar/(Math.max(1,colorN)*.31f)+colorEdge/(Math.max(1,colorN)*.65f));
+        float colorVar=0,colorEdge=0;int colorN=0;
+        for(int y=1;y<H-1;y+=2)for(int x=1;x<W-1;x+=2){int i=y*W+x;colorVar+=Math.abs(sat[i]-avgSat);colorEdge+=hueDistance(hue[i],hue[i+1])*sat[i];colorN++;}
+        float colorScore=clamp01(colorVar/(Math.max(1,colorN)*.31f)+colorEdge/(Math.max(1,colorN)*.65f));
 
         float gyro=sensor==null?0:clamp01(sensor.gyro/1.8f);float accel=sensor==null?0:clamp01(sensor.accel/2.2f);
         float sensorMismatch=clamp01(Math.abs(motion-gyro)*.72f + (motion>.45f&&gyro<.12f?.28f:0) + (motion<.10f&&gyro>.45f?.18f:0) + accel*.06f);
@@ -114,7 +113,12 @@ final class V10HunterEngine {
         Bitmap filtered=render(chosen,px,lum,grad,sat,hue,state.prevLum);
 
         state.prevLum=lum;state.prevGrad=grad;state.prevAvgLum=avg;long fi=state.frameIndex++;
-        return new Result(fi,chosen,filtered,region,tier,score,motion,edge,lumaSpike,colorScore,code,bent,sensorMismatch,rectPenalty,fs,tiles,TC,TR,state.persistence);
+        Result raw=new Result(fi,chosen,filtered,region,tier,score,motion,edge,lumaSpike,colorScore,code,bent,sensorMismatch,rectPenalty,fs,tiles,TC,TR,state.persistence);
+        V10AdaptiveAI.Decision ai=state.ai.evaluate(raw,threshold);
+        if(ai.score>raw.score+.001f||ai.tier>raw.tier){
+            return new Result(fi,chosen,filtered,region,ai.tier,ai.score,motion,edge,lumaSpike,colorScore,code,bent,sensorMismatch,rectPenalty,fs,tiles,TC,TR,state.persistence);
+        }
+        return raw;
     }
 
     private static Result empty(State s){long f=s==null?0:s.frameIndex++;return new Result(f,Filter.NORMAL,null,new RectF(.25f,.25f,.75f,.75f),0,0,0,0,0,0,0,0,0,0,new float[Filter.values().length],new float[TC*TR],TC,TR,0);}
@@ -125,7 +129,7 @@ final class V10HunterEngine {
             float g=0,d=0,ch=0;int n=0;int x0=tx*tw,y0=ty*th,x1=tx==TC-1?W:(tx+1)*tw,y1=ty==TR-1?H:(ty+1)*th;
             for(int y=y0;y<y1;y+=2)for(int x=x0;x<x1;x+=2){int i=y*W+x;g+=grad[i];ch+=sat[i];if(prev!=null)d+=Math.abs(lum[i]-prev[i]);n++;}
             float v=clamp01(g/(Math.max(1,n)*.10f))*.42f+clamp01(d/(Math.max(1,n)*.12f))*.44f+clamp01(ch/(Math.max(1,n)*.65f))*.14f;
-            if(tx==0||ty==0||tx==TC-1||ty==TR-1)v*=.18f; // hard anti-frame / anti-letterbox suppression
+            if(tx==0||ty==0||tx==TC-1||ty==TR-1)v*=.18f;
             int k=ty*TC+tx;out[k]=v;if(v>bestV){bestV=v;best=k;}
         }
         int bx=best%TC,by=best/TC;float cutoff=bestV*.62f;int minX=bx,maxX=bx,minY=by,maxY=by;
@@ -133,7 +137,7 @@ final class V10HunterEngine {
         return new RectF(minX/(float)TC,minY/(float)TR,(maxX+1)/(float)TC,(maxY+1)/(float)TR);
     }
 
-    private static float rectanglePenalty(RectF r){if(r==null)return 0;float w=r.width(),h=r.height();float edge=(r.left<=.001f||r.top<=.001f||r.right>=.999f||r.bottom>=.999f)?1f:0f;float huge=clamp01((w*h-.42f)/.45f);float wide=clamp01((Math.max(w/h,h/w)-2.6f)/3f);return clamp01(edge*.65f+huge*.65f+wide*.18f);}
+    private static float rectanglePenalty(RectF r){if(r==null)return 0;float w=r.width(),h=r.height();float edge=(r.left<=.001f||r.top<=.001f||r.right>=.999f||r.bottom>=.999f)?1f:0f;float huge=clamp01((w*h-.42f)/.45f);float wide=clamp01((Math.max(w/Math.max(.001f,h),h/Math.max(.001f,w))-2.6f)/3f);return clamp01(edge*.65f+huge*.65f+wide*.18f);}
     private static int tier(float score,float threshold,int persistence){float t=clamp(threshold,.20f,.92f);if(score<t)return 0;if(score>=Math.min(.98f,t+.24f)&&persistence>=3)return 4;if(score>=Math.min(.96f,t+.16f)&&persistence>=2)return 3;if(score>=Math.min(.94f,t+.08f))return 2;return 1;}
 
     private static Bitmap render(Filter f,int[]src,float[]lum,float[]grad,float[]sat,float[]hue,float[]prev){
